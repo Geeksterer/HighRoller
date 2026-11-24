@@ -18,6 +18,7 @@ _G.HighRoller = HR
 
 local ADDON_VERSION = GetAddOnMetadata(addonName, "Version") or "?"
 local ADDON_AUTHOR  = GetAddOnMetadata(addonName, "Author") or "Copper"
+local ADDON_URL     = "https://github.com/Geeksterer/HighRoller/"
 
 local function GetFooterText()
     return string.format("High Roller v%s by %s", ADDON_VERSION, ADDON_AUTHOR)
@@ -60,9 +61,16 @@ local FALLBACK_CLASS_HEX = {
 -- Locale-safe item classes & subclasses (WotLK 3.3.5a)
 local CLASS_WEAPON     = select(1, GetAuctionItemClasses()) or "Weapon"
 local CLASS_ARMOR      = select(2, GetAuctionItemClasses()) or "Armor"
+local CLASS_CONTAINER  = select(3, GetAuctionItemClasses()) or "Container"
+local CLASS_CONSUMABLE = select(4, GetAuctionItemClasses()) or "Consumable"
+local CLASS_GLYPH      = select(5, GetAuctionItemClasses()) or "Glyph"
 local CLASS_TRADEGOODS = select(6, GetAuctionItemClasses()) or "Trade Goods"
+local CLASS_PROJECTILE = select(7, GetAuctionItemClasses()) or "Projectile"
+local CLASS_QUIVER     = select(8, GetAuctionItemClasses()) or "Quiver"
 local CLASS_RECIPE     = select(9, GetAuctionItemClasses()) or "Recipe"
+local CLASS_GEM        = select(10, GetAuctionItemClasses()) or "Gem"
 local CLASS_MISC       = select(11, GetAuctionItemClasses()) or "Miscellaneous"
+local CLASS_QUEST      = select(12, GetAuctionItemClasses()) or "Quest"
 local SUBCLASS_PET     = select(3, GetAuctionItemSubClasses(11)) or "Pet"
 local SUBCLASS_MOUNT   = select(6, GetAuctionItemSubClasses(11)) or "Mount"
 local PROF_JC_NAME     = GetSpellInfo(25229) or "Jewelcrafting"
@@ -79,6 +87,87 @@ local ORB_ITEM_IDS = {
     [43297] = true, -- Damaged Necklace
 }
 
+-- Emblems / badges / currencies that must never appear in the Loot Summary table
+local EXCLUDED_LOOT_ITEM_IDS = {
+    [49426] = true, -- Emblem of Frost
+    [47241] = true, -- Emblem of Triumph
+    [45624] = true, -- Emblem of Conquest
+    [40753] = true, -- Emblem of Valor
+    [40752] = true, -- Emblem of Heroism
+    [29434] = true, -- Badge of Justice
+    [43228] = true, -- Stone Keeper's Shard
+    [43589] = true, -- Wintergrasp Mark of Honor
+}
+
+-- WotLK 3.3.5a Tier Token Item IDs (T7 Naxx/OS/EoE, T8 Ulduar, T9 ToC/ToGC, T10 ICC)
+local TIER_TOKEN_IDS = {
+    -- ICC (T10)
+    [52025] = true, [52026] = true, [52027] = true,
+    [52028] = true, [52029] = true, [52030] = true,
+    -- ToC / ToGC (T9)
+    [47242] = true, [47557] = true, [47558] = true, [47559] = true,
+}
+-- Ulduar (T8: 45632-45661) and Naxx/OS/EoE (T7: 40610-40639)
+for id = 45632, 45661 do TIER_TOKEN_IDS[id] = true end
+for id = 40610, 40639 do TIER_TOKEN_IDS[id] = true end
+
+-- Notable Classic/TBC/WotLK boss mounts & companion pets (fallback when uncached in WDB)
+local BOSS_MOUNT_PET_IDS = {
+    -- WotLK raid & dungeon boss mounts
+    [50818] = true, -- Invincible's Reins
+    [45693] = true, -- Mimiron's Head
+    [49636] = true, -- Reins of the Onyxian Drake
+    [43986] = true, -- Reins of the Black Drake
+    [43954] = true, -- Reins of the Twilight Drake
+    [43952] = true, -- Reins of the Azure Drake
+    [43953] = true, -- Reins of the Blue Drake
+    [43959] = true, -- Reins of the Grand Black War Mammoth (Alliance)
+    [44083] = true, -- Reins of the Grand Black War Mammoth (Horde)
+    [44151] = true, -- Reins of the Blue Proto-Drake
+    [43951] = true, -- Reins of the Bronze Drake
+    -- Classic / TBC boss mounts & pets
+    [13335] = true, -- Deathcharger's Reins
+    [19872] = true, -- Swift Razzashi Raptor
+    [19902] = true, -- Swift Zulian Tiger
+    [30480] = true, -- Fiery Warhorse's Reins
+    [32458] = true, -- Ashes of Al'ar
+    [32768] = true, -- Reins of the Raven Lord
+    [35513] = true, -- Swift White Hawkstrider
+    [35504] = true, -- Phoenix Hatchling
+    [33993] = true, -- Mojo
+    [29960] = true, -- Captured Firefly
+    [44984] = true, -- Ammen Vale Lashling / companion fallback
+}
+
+-- Known WotLK Epic BoP item IDs used by Solo Test Mode (fallback if client WDB cache is empty)
+local SOLO_TEST_EPIC_BOP_IDS = {
+    [50365] = true, -- Phylactery of the Nameless Lich
+    [50730] = true, -- Glorenzelg, High-Blade of the Silver Hand
+    [50363] = true, -- Deathbringer's Will
+    [52026] = true, -- Conqueror's Mark of Sanctification
+    [50620] = true, -- Coldwraith Links
+    [50618] = true, -- Frostbrood Sapphire Ring
+    [50818] = true, -- Invincible's Reins
+}
+
+local TIER_TOKEN_NAME_PATTERNS = {
+    "mark of sanctification",
+    "trophy of the crusade",
+    "regalia of the grand",
+    "of the lost conqueror",
+    "of the lost protector",
+    "of the lost vanquisher",
+    "of the wayward conqueror",
+    "of the wayward protector",
+    "of the wayward vanquisher",
+    "of the fallen champion",
+    "of the fallen defender",
+    "of the fallen hero",
+    "of the forgotten conqueror",
+    "of the forgotten protector",
+    "of the forgotten vanquisher",
+}
+
 local NON_DE_POLICY_KEYS = {
     "orbs",
     "recipeBoE",
@@ -90,19 +179,30 @@ local NON_DE_POLICY_KEYS = {
     "petKnown",
 }
 
--- Build localized chat patterns from Blizzard global format strings
+-- Build localized chat patterns from Blizzard global format strings (handles %s, %d, %1$s, %2$d)
 local function GlobalFormatToPattern(fmt)
-    return "^" .. fmt
+    local pat = fmt
         :gsub("([%(%)%.%%%+%-%*%?%[%]%^%$])", "%%%1")
+        :gsub("%%%%%d+%%%$s", "(.+)")
+        :gsub("%%%%%d+%%%$d", "(%%d+)")
         :gsub("%%%%s", "(.+)")
-        :gsub("%%%%d", "(%%d+)") .. "$"
+        :gsub("%%%%d", "(%%d+)")
+    return "^" .. pat .. "$"
 end
 
-local ROLL_MSG_PATTERN    = GlobalFormatToPattern(RANDOM_ROLL_RESULT or "%s rolls %d (%d-%d)")
-local LOOT_OTHER_PATTERN  = GlobalFormatToPattern(LOOT_ITEM or "%s receives loot: %s.")
-local LOOT_OTHER_MULT_PAT = GlobalFormatToPattern(LOOT_ITEM_MULTIPLE or "%s receives loot: %s x%d.")
-local LOOT_SELF_PATTERN   = GlobalFormatToPattern(LOOT_ITEM_SELF or "You receive loot: %s.")
-local LOOT_SELF_MULT_PAT  = GlobalFormatToPattern(LOOT_ITEM_SELF_MULTIPLE or "You receive loot: %s x%d.")
+local ROLL_MSG_PATTERN             = GlobalFormatToPattern(RANDOM_ROLL_RESULT or "%s rolls %d (%d-%d)")
+local LOOT_OTHER_PATTERN           = GlobalFormatToPattern(LOOT_ITEM or "%s receives loot: %s.")
+local LOOT_OTHER_MULT_PAT          = GlobalFormatToPattern(LOOT_ITEM_MULTIPLE or "%s receives loot: %s x%d.")
+local LOOT_SELF_PATTERN            = GlobalFormatToPattern(LOOT_ITEM_SELF or "You receive loot: %s.")
+local LOOT_SELF_MULT_PAT           = GlobalFormatToPattern(LOOT_ITEM_SELF_MULTIPLE or "You receive loot: %s x%d.")
+local LOOT_WON_OTHER_PATTERN       = GlobalFormatToPattern(LOOT_ROLL_WON or "%s won: %s")
+local LOOT_WON_SELF_PATTERN        = GlobalFormatToPattern(LOOT_ROLL_YOU_WON or "You won: %s")
+local LOOT_WON_OTHER_NEED_PAT      = GlobalFormatToPattern(LOOT_ROLL_WON_NO_SPAM_NEED or "%1$s won: %3$s | Need - %2$d")
+local LOOT_WON_SELF_NEED_PAT       = GlobalFormatToPattern(LOOT_ROLL_YOU_WON_NO_SPAM_NEED or "You won: %2$s | Need - %1$d")
+local LOOT_WON_OTHER_GREED_PAT     = GlobalFormatToPattern(LOOT_ROLL_WON_NO_SPAM_GREED or "%1$s won: %3$s | Greed - %2$d")
+local LOOT_WON_SELF_GREED_PAT      = GlobalFormatToPattern(LOOT_ROLL_YOU_WON_NO_SPAM_GREED or "You won: %2$s | Greed - %1$d")
+local LOOT_WON_OTHER_DE_PAT        = GlobalFormatToPattern(LOOT_ROLL_WON_NO_SPAM_DE or "%1$s won: %3$s | Disenchant - %2$d")
+local LOOT_WON_SELF_DE_PAT         = GlobalFormatToPattern(LOOT_ROLL_YOU_WON_NO_SPAM_DE or "You won: %2$s | Disenchant - %1$d")
 
 -- Marks cycled on Left-Click in Raid Loot Tracker (classic RaidRoll style)
 local PLAYER_MARKS = { "", "(W)", "(MS)", "(OS)", "[!]" }
@@ -234,6 +334,7 @@ function HR:PrintLoadBannerAndHelp(includeHeader)
     DEFAULT_CHAT_FRAME:AddMessage("  |cffffd100/hr profile <name>|r - Switch active rolling profile")
     DEFAULT_CHAT_FRAME:AddMessage("  |cffffd100/hr assign de <player>|r - Assign Disenchanter for Master Loot")
     DEFAULT_CHAT_FRAME:AddMessage("  |cffffd100/hr pause|r / |cffffd100/hr resume|r - Pause or resume auto-rolling")
+    DEFAULT_CHAT_FRAME:AddMessage("  |cffffd100/hr clear|r - Clear the saved raid loot table")
     DEFAULT_CHAT_FRAME:AddMessage("  |cffffd100/hr reset|r - Reset all window positions to center screen")
     DEFAULT_CHAT_FRAME:AddMessage("  |cffffd100/hr status|r / |cffffd100/hr help|r - Show status or command list")
 end
@@ -379,7 +480,7 @@ function HR:InitDB()
     if s.lockMinimap == nil then s.lockMinimap = false end
     if s.minimapAngle == nil then s.minimapAngle = 225 end
     if s.deTarget == nil then s.deTarget = "" end
-    if s.msBidsBeatOS == nil then s.msBidsBeatOS = false end
+    if s.msBidsBeatOS == nil then s.msBidsBeatOS = true end
     if s.autoProfileDungeon == nil then s.autoProfileDungeon = "" end
     if s.autoProfileRaid == nil then s.autoProfileRaid = "" end
     if s.rollDelay ~= 0 and s.rollDelay ~= 0.5 and s.rollDelay ~= 1.0 and s.rollDelay ~= 1.5 then
@@ -423,7 +524,7 @@ function HR:InitDB()
         for name, data in pairs(self.DEFAULT_PROFILES) do
             HighRollerDB.profiles[name] = DeepCopy(data)
         end
-        HighRollerDB.schemaVersion = 3
+        HighRollerDB.schemaVersion = 4
     else
         local ver = HighRollerDB.schemaVersion or 0
         if ver < 2 then
@@ -460,8 +561,12 @@ function HR:InitDB()
                 prof.recipeKnownProfUnlearned = nil
                 prof.recipeOther = nil
             end
+        end
 
-            HighRollerDB.schemaVersion = 3
+        if ver < 4 then
+            -- Upgrade v3 -> v4: default MS Bids Sort Above [OS] Bids to checked (users can still uncheck)
+            s.msBidsBeatOS = true
+            HighRollerDB.schemaVersion = 4
         end
     end
 
@@ -491,6 +596,10 @@ function HR:InitDB()
     end
     if s.autoProfileRaid ~= "" and not HighRollerDB.profiles[s.autoProfileRaid] then
         s.autoProfileRaid = ""
+    end
+
+    if type(HighRollerDB.savedLoot) ~= "table" then
+        HighRollerDB.savedLoot = {}
     end
 
     -- Restore persistent profile for this character
@@ -854,6 +963,132 @@ function HR:IsCompanionLearned(companionType, itemLink, itemName)
     return false
 end
 
+function HR:IsTierToken(itemLink, itemID, itemName)
+    local id = itemID or ExtractItemID(itemLink)
+    if id and TIER_TOKEN_IDS[id] then
+        return true
+    end
+
+    local plainName = strlower(itemName or ExtractPlainItemName(itemLink) or "")
+    if plainName ~= "" then
+        for _, pat in ipairs(TIER_TOKEN_NAME_PATTERNS) do
+            if string.find(plainName, pat, 1, true) then
+                return true
+            end
+        end
+    end
+
+    return false
+end
+
+function HR:IsEpicBoPOrTierToken(itemLink)
+    if not itemLink or itemLink == "" then return false end
+
+    local itemID = ExtractItemID(itemLink)
+    if itemID and EXCLUDED_LOOT_ITEM_IDS[itemID] then
+        return false
+    end
+
+    local itemName, _, rarity, _, _, itemType, itemSubType, _, itemEquipLoc = GetItemInfo(itemLink)
+
+    -- 1. Tier Tokens (T7/T8/T9/T10 & classic/TBC patterns)
+    if self:IsTierToken(itemLink, itemID, itemName) then
+        return true
+    end
+
+    -- 2. Boss Mounts & Companion Pets (Rare, Epic, or Legendary)
+    if (itemID and BOSS_MOUNT_PET_IDS[itemID]) or self:ClassifyMountOrPet(itemType, itemSubType) ~= nil then
+        return true
+    end
+
+    -- Exclude non-loot item categories early (Trade Goods, Consumables, Quests, Gems, Glyphs, Recipes, Ammo)
+    if itemType == CLASS_TRADEGOODS
+        or itemType == CLASS_CONSUMABLE
+        or itemType == CLASS_QUEST
+        or itemType == CLASS_GEM
+        or itemType == CLASS_GLYPH
+        or itemType == CLASS_RECIPE
+        or itemType == CLASS_PROJECTILE
+        or itemType == CLASS_QUIVER then
+        return false
+    end
+
+    -- Scan hidden 3.3.5a tooltip for Mount/Pet text and Bind on Pickup vs Bind on Equip / Use
+    scanTooltip:ClearLines()
+    scanTooltip:SetHyperlink(itemLink)
+    local numLines = scanTooltip:NumLines()
+    local bopText = ITEM_BIND_ON_PICKUP or "Binds when picked up"
+    local boeText = ITEM_BIND_ON_EQUIP or "Binds when equipped"
+    local bouText = ITEM_BIND_ON_USE or "Binds when used"
+    local isBoP = false
+    local isBoEOrBoU = false
+    local isTooltipMountOrPet = false
+    local hasClassRestriction = false
+    local classPrefix = strlower(string.match(ITEM_CLASSES_ALLOWED or "Classes: %s", "^([^:]+:)") or "classes:")
+
+    for i = 1, numLines do
+        local leftLine = _G["HighRollerScanTooltipTextLeft" .. i]
+        local text = leftLine and leftLine:GetText()
+        if text then
+            if text == bopText or string.find(text, bopText, 1, true) then
+                isBoP = true
+            elseif text == boeText or string.find(text, boeText, 1, true)
+                or text == bouText or string.find(text, bouText, 1, true) then
+                isBoEOrBoU = true
+            end
+            local lowerText = strlower(text)
+            if string.find(lowerText, classPrefix, 1, true) then
+                hasClassRestriction = true
+            end
+            if string.find(lowerText, "teaches you how to summon", 1, true)
+                or string.find(lowerText, "right click to summon and dismiss", 1, true) then
+                isTooltipMountOrPet = true
+            end
+        end
+    end
+
+    if isTooltipMountOrPet then
+        return true
+    end
+
+    -- 3. Epic / Legendary BoP items (fall back to hyperlink color if not yet cached)
+    local isEpicOrHigher = false
+    if rarity ~= nil then
+        isEpicOrHigher = (rarity >= 4)
+    else
+        local lowerLink = strlower(itemLink)
+        isEpicOrHigher = (string.find(lowerLink, "|cffa335ee", 1, true) ~= nil)
+            or (string.find(lowerLink, "|cffff8000", 1, true) ~= nil)
+    end
+    if not isEpicOrHigher then
+        return false
+    end
+
+    if isBoEOrBoU then
+        return false
+    end
+
+    if isBoP then
+        if itemType == CLASS_WEAPON or itemType == CLASS_ARMOR or itemType == CLASS_CONTAINER
+            or (itemEquipLoc ~= nil and itemEquipLoc ~= "")
+            or hasClassRestriction then
+            return true
+        end
+        -- Allow other Epic BoP Miscellaneous items (e.g., tier tokens, mounts, pets)
+        if itemType == CLASS_MISC or itemType == nil then
+            return true
+        end
+        return false
+    end
+
+    -- Fallback for uncached Solo Test Mode items on a fresh client cache
+    if numLines == 0 and itemID and SOLO_TEST_EPIC_BOP_IDS[itemID] then
+        return true
+    end
+
+    return false
+end
+
 -- ============================================================================
 -- 4. Group Loot Roll & BoP Confirmation Engine
 -- ============================================================================
@@ -1176,19 +1411,39 @@ end
 -- ============================================================================
 
 HR.raidState = {
-    sessions          = {},  -- array of roll/bid sessions
-    viewIndex         = 0,
-    trackingActive    = false,
-    marks             = {},  -- persistent raid marks: [shortName] = markIndex
-    classCache        = {},  -- persistent class cache: [shortName] = classFileName (e.g. "WARLOCK")
-    bossLoot          = {},  -- items on currently/recently looted boss
-    droppedItems      = {},  -- all Rare/Epic & /rw items seen this group
-    scannedCorpses    = {},  -- GUIDs of already-scanned corpses
-    countdownActive   = false,
-    countdownLeft     = 0,
-    countdownWarned5  = false,
-    countdownLastSec  = 0,
-    isTestMode        = false,
+    sessions            = {},  -- array of roll/bid sessions
+    viewIndex           = 0,
+    trackingActive      = false,
+    marks               = {},  -- persistent raid marks: [shortName] = markIndex
+    classCache          = {},  -- persistent class cache: [shortName] = classFileName (e.g. "WARLOCK")
+    bossLoot            = {},  -- items on currently/recently looted boss & queued ML/bulk loot
+    droppedItems        = {},  -- persistent raid loot table (won, queued, and unclaimed drops)
+    scannedCorpses      = {},  -- GUIDs of already-scanned corpses
+    countdownActive     = false,
+    countdownLeft       = 0,
+    countdownWarned5    = false,
+    countdownLastSec    = 0,
+    ignoreOwnRW         = {},  -- prevents High Roller's own countdown /rw notices from resetting the view
+    recentGroupLootWins = {},  -- deduplicates follow-up LOOT_ITEM after LOOT_ROLL_WON
+    recentAwardedLoot   = {},  -- deduplicates follow-up LOOT_ITEM after GiveMasterLoot
+    pendingBulkLoot     = {},  -- detects ML bulk loot given to a holder (2+ items within 120s)
+    isTestMode          = false,
+}
+
+StaticPopupDialogs["HIGHROLLER_CONFIRM_CLEAR_LOOT"] = {
+    text = "You joined a group. Do you want to clear the saved High Roller loot table?",
+    button1 = ACCEPT,
+    button2 = CANCEL,
+    OnAccept = function()
+        HR:ClearRaidTrackerData(true)
+        HR:Print("Cleared previous raid loot table.")
+    end,
+    OnCancel = function()
+        HR:Print("Kept previous raid loot table.")
+    end,
+    timeout = 0,
+    whileDead = 1,
+    hideOnEscape = 1,
 }
 
 HR.groupStateInitialized = false
@@ -1304,21 +1559,230 @@ function HR:IsSenderRLOrAssist(sender)
     return false
 end
 
+function HR:GetMasterLooterName()
+    local lootMethod, mlPartyID, mlRaidID = GetLootMethod()
+    if lootMethod ~= "master" then
+        return nil
+    end
+    if mlRaidID and mlRaidID > 0 then
+        local name = GetRaidRosterInfo(mlRaidID)
+        if name and name ~= "" then
+            return ShortName(name)
+        end
+    end
+    if mlPartyID ~= nil then
+        if mlPartyID == 0 then
+            return ShortName(UnitName("player"))
+        elseif mlPartyID > 0 then
+            local name = UnitName("party" .. mlPartyID)
+            if name and name ~= "" then
+                return ShortName(name)
+            end
+        end
+    end
+    return nil
+end
+
+-- Protect valid WoW hyperlinks while stripping stray pipe ("|") / newline chars
+-- that would cause SendChatMessage() to throw "Invalid escape code in chat message".
+local function SanitizeOutgoingChatMessage(msg)
+    msg = tostring(msg or ""):gsub("[\r\n]+", " ")
+
+    local links = {}
+    local shielded = msg:gsub("(|c%x%x%x%x%x%x%x%x|H[^|]+|h%[[^%]]+%]|h|r)", function(link)
+        local idx = #links + 1
+        links[idx] = link
+        return "\001HRLINK" .. idx .. "\002"
+    end)
+
+    -- Replace any remaining raw pipe character outside valid hyperlinks
+    shielded = shielded:gsub("|", "-")
+
+    local clean = shielded:gsub("\001HRLINK(%d+)\002", function(idx)
+        return links[tonumber(idx)] or ""
+    end)
+
+    -- Never exceed WoW 3.3.5a's 255-byte SendChatMessage limit or slice inside a hyperlink
+    if #clean > 255 then
+        local plain = clean:gsub("|c%x%x%x%x%x%x%x%x|H[^|]+|h(%[[^%]]+%])|h|r", "%1")
+        plain = plain:gsub("|", "-")
+        clean = string.sub(plain, 1, 255)
+    end
+
+    return clean
+end
+
 function HR:SendRaidMessage(msg, preferRW)
+    local safeMsg = SanitizeOutgoingChatMessage(msg)
+    if safeMsg == "" then return end
+
     if GetNumRaidMembers() > 0 then
         if preferRW and self:IsPlayerRLOrAssist() then
-            SendChatMessage(msg, "RAID_WARNING")
+            SendChatMessage(safeMsg, "RAID_WARNING")
         else
-            SendChatMessage(msg, "RAID")
+            SendChatMessage(safeMsg, "RAID")
         end
     elseif GetNumPartyMembers() > 0 then
-        SendChatMessage(msg, "PARTY")
+        SendChatMessage(safeMsg, "PARTY")
     else
-        self:Print(msg)
+        self:Print(safeMsg)
     end
 end
 
-function HR:ClearRaidTrackerData(silent)
+function HR:HasAnyLootTableData()
+    return (#self.raidState.droppedItems > 0) or (#self.raidState.sessions > 0)
+end
+
+function HR:SaveRaidLootState()
+    if not HighRollerDB then return end
+    -- Never overwrite a real saved raid loot table with Solo Test Mode data
+    if self.raidState.isTestMode then return end
+
+    local savedSessions = {}
+    local sessionToIndex = {}
+    for i, s in ipairs(self.raidState.sessions) do
+        sessionToIndex[s] = i
+        table.insert(savedSessions, {
+            itemLink     = s.itemLink,
+            itemName     = s.itemName,
+            itemID       = s.itemID,
+            itemIcon     = s.itemIcon,
+            bids         = DeepCopy(s.bids),
+            rolls        = DeepCopy(s.rolls),
+            bidOrder     = s.bidOrder or 0,
+            rollOrder    = s.rollOrder or 0,
+            winnerName   = s.winnerName,
+            winnerClass  = s.winnerClass,
+            winnerDetail = s.winnerDetail,
+        })
+    end
+
+    local savedDrops = {}
+    for _, d in ipairs(self.raidState.droppedItems) do
+        table.insert(savedDrops, {
+            itemLink     = d.itemLink,
+            itemName     = d.itemName,
+            itemID       = d.itemID,
+            source       = d.source,
+            winner       = d.winner,
+            winnerClass  = d.winnerClass,
+            winDetail    = d.winDetail,
+            winSource    = d.winSource,
+            queued       = d.queued and true or false,
+            queuedBy     = d.queuedBy,
+            sessionIndex = d.session and sessionToIndex[d.session] or nil,
+        })
+    end
+
+    HighRollerDB.savedLoot = {
+        sessions   = savedSessions,
+        dropped    = savedDrops,
+        marks      = DeepCopy(self.raidState.marks),
+        classCache = DeepCopy(self.raidState.classCache),
+        bossLoot   = DeepCopy(self.raidState.bossLoot),
+        viewIndex  = self.raidState.viewIndex or 0,
+        wasInGroup = IsInGroupOrRaid(),
+    }
+end
+
+function HR:LoadRaidLootState()
+    if not HighRollerDB or type(HighRollerDB.savedLoot) ~= "table" then return end
+    local saved = HighRollerDB.savedLoot
+
+    wipe(self.raidState.sessions)
+    wipe(self.raidState.droppedItems)
+    wipe(self.raidState.marks)
+    wipe(self.raidState.classCache)
+    wipe(self.raidState.bossLoot)
+
+    if type(saved.marks) == "table" then
+        for k, v in pairs(saved.marks) do
+            self.raidState.marks[k] = v
+        end
+    end
+
+    if type(saved.classCache) == "table" then
+        for k, v in pairs(saved.classCache) do
+            self.raidState.classCache[k] = v
+        end
+    end
+
+    if type(saved.bossLoot) == "table" then
+        for _, item in ipairs(saved.bossLoot) do
+            if type(item) == "table" and item.link then
+                table.insert(self.raidState.bossLoot, DeepCopy(item))
+            end
+        end
+    end
+
+    if type(saved.sessions) == "table" then
+        for _, s in ipairs(saved.sessions) do
+            if type(s) == "table" and s.itemLink then
+                local restored = {
+                    itemLink     = s.itemLink,
+                    itemName     = s.itemName or ExtractPlainItemName(s.itemLink),
+                    itemID       = s.itemID or ExtractItemID(s.itemLink),
+                    itemIcon     = s.itemIcon or "Interface\\Icons\\INV_Misc_QuestionMark",
+                    bids         = DeepCopy(s.bids or {}),
+                    rolls        = DeepCopy(s.rolls or {}),
+                    bidByName    = {},
+                    rollByName   = {},
+                    bidOrder     = s.bidOrder or 0,
+                    rollOrder    = s.rollOrder or 0,
+                    winnerName   = s.winnerName,
+                    winnerClass  = s.winnerClass,
+                    winnerDetail = s.winnerDetail,
+                }
+                for _, b in ipairs(restored.bids) do
+                    if b.name then restored.bidByName[b.name] = b end
+                end
+                for _, r in ipairs(restored.rolls) do
+                    if r.name then restored.rollByName[r.name] = r end
+                end
+                table.insert(self.raidState.sessions, restored)
+            end
+        end
+    end
+
+    if type(saved.dropped) == "table" then
+        for _, d in ipairs(saved.dropped) do
+            if type(d) == "table" and d.itemLink then
+                local sessRef = (d.sessionIndex and self.raidState.sessions[d.sessionIndex]) or nil
+                table.insert(self.raidState.droppedItems, {
+                    itemLink    = d.itemLink,
+                    itemName    = d.itemName or ExtractPlainItemName(d.itemLink),
+                    itemID      = d.itemID or ExtractItemID(d.itemLink),
+                    source      = d.source or "",
+                    winner      = d.winner,
+                    winnerClass = d.winnerClass,
+                    winDetail   = d.winDetail,
+                    winSource   = d.winSource,
+                    queued      = d.queued and true or false,
+                    queuedBy    = d.queuedBy,
+                    session     = sessRef,
+                })
+            end
+        end
+    end
+
+    local total = #self.raidState.sessions
+    local vIdx = tonumber(saved.viewIndex) or total
+    if vIdx < 0 then vIdx = 0 end
+    if vIdx > total then vIdx = total end
+    if total > 0 and vIdx == 0 then vIdx = total end
+    self.raidState.viewIndex = vIdx
+    self.raidState.trackingActive = false
+    self.raidState.isTestMode = false
+end
+
+function HR:PromptClearLootTable()
+    if StaticPopup_Visible and StaticPopup_Visible("HIGHROLLER_CONFIRM_CLEAR_LOOT") then
+        return
+    end
+    StaticPopup_Show("HIGHROLLER_CONFIRM_CLEAR_LOOT")
+end
+
+function HR:ClearRaidTrackerData(silent, skipSave)
     local hadData = (#self.raidState.sessions > 0) or (#self.raidState.droppedItems > 0) or (#self.raidState.bossLoot > 0)
     self:StopCountdown(true)
     wipe(self.raidState.sessions)
@@ -1327,13 +1791,20 @@ function HR:ClearRaidTrackerData(silent)
     wipe(self.raidState.bossLoot)
     wipe(self.raidState.droppedItems)
     wipe(self.raidState.scannedCorpses)
+    wipe(self.raidState.ignoreOwnRW)
+    wipe(self.raidState.recentGroupLootWins)
+    wipe(self.raidState.recentAwardedLoot)
+    wipe(self.raidState.pendingBulkLoot)
     self.raidState.viewIndex = 0
     self.raidState.trackingActive = false
     self.raidState.isTestMode = false
     self:UpdateClassCache()
+    if not skipSave then
+        self:SaveRaidLootState()
+    end
     self:RefreshAllUI()
     if not silent and hadData then
-        self:Print("Entered a new group - cleared previous Raid Tracker data.")
+        self:Print("Cleared previous Raid Tracker and loot table data.")
     end
 end
 
@@ -1343,18 +1814,46 @@ function HR:CheckGroupTransition()
         self.groupStateInitialized = true
         self.wasInGroup = inGroup
         self:UpdateClassCache()
+        -- If the player logged out solo with a saved loot table and logged back in already in a group, ask to clear
+        local wasInGroupBeforeLogout = HighRollerDB and HighRollerDB.savedLoot and HighRollerDB.savedLoot.wasInGroup
+        if inGroup and not wasInGroupBeforeLogout and self:HasAnyLootTableData() then
+            self:PromptClearLootTable()
+        end
+        if HighRollerDB and HighRollerDB.savedLoot then
+            HighRollerDB.savedLoot.wasInGroup = inGroup
+        end
         return
     end
 
     if inGroup and not self.wasInGroup then
-        self:ClearRaidTrackerData(false)
+        self:UpdateClassCache()
+        if self:HasAnyLootTableData() then
+            self:PromptClearLootTable()
+        end
     elseif inGroup then
         self:UpdateClassCache()
     end
-    self.wasInGroup = inGroup
+
+    if inGroup ~= self.wasInGroup then
+        self.wasInGroup = inGroup
+        if HighRollerDB and HighRollerDB.savedLoot then
+            HighRollerDB.savedLoot.wasInGroup = inGroup
+        end
+    end
 end
 
-function HR:RecordDroppedItem(itemLink, sourceName, sessionRef)
+function HR:AddToBossLootQueue(itemLink)
+    if not itemLink then return end
+    local itemName, _, rarity, _, _, _, _, _, _, icon = GetItemInfo(itemLink)
+    table.insert(self.raidState.bossLoot, {
+        link   = itemLink,
+        name   = itemName or ExtractPlainItemName(itemLink),
+        icon   = icon or "Interface\\Icons\\INV_Misc_QuestionMark",
+        rarity = rarity or 4,
+    })
+end
+
+function HR:RecordDroppedItem(itemLink, sourceName, sessionRef, winSource, isQueued, queuedBy)
     if not itemLink then return nil end
     local itemID = ExtractItemID(itemLink)
     local entry = {
@@ -1365,36 +1864,54 @@ function HR:RecordDroppedItem(itemLink, sourceName, sessionRef)
         winner      = nil,
         winnerClass = nil,
         winDetail   = nil,
+        winSource   = winSource, -- "GROUP_LOOT", "RAID_SESSION", or "QUEUED"
+        queued      = isQueued and true or false,
+        queuedBy    = queuedBy,
         session     = sessionRef,
     }
     table.insert(self.raidState.droppedItems, entry)
     return entry
 end
 
-function HR:RecordItemWinner(itemLink, winnerName, detailText, sessionRef)
+function HR:QueueLootItem(itemLink, holderName, queueSource)
+    if not itemLink or not self:IsEpicBoPOrTierToken(itemLink) then return nil end
+    local shortHolder = ShortName(holderName)
+    local entry = self:RecordDroppedItem(
+        itemLink,
+        queueSource or "Queued",
+        nil,
+        "QUEUED",
+        true,
+        shortHolder ~= "" and shortHolder or nil
+    )
+    self:AddToBossLootQueue(itemLink)
+    self:SaveRaidLootState()
+    self:RefreshAllUI()
+    return entry
+end
+
+function HR:RecordItemWinner(itemLink, winnerName, detailText, sessionRef, winSource)
     if not itemLink or not winnerName then return end
     local itemID = ExtractItemID(itemLink)
     local shortWin = ShortName(winnerName)
     local winClass = self:GetPlayerClassFile(shortWin)
+    local qualifies = self:IsEpicBoPOrTierToken(itemLink)
 
-    -- Update matching session
+    -- Update matching session (if this win came from a /rw session)
     local matchedSession = sessionRef
-    if not matchedSession then
-        for i = #self.raidState.sessions, 1, -1 do
-            local s = self.raidState.sessions[i]
-            if s.itemID == itemID and not s.winnerName then
-                matchedSession = s
-                break
-            end
-        end
-    end
     if matchedSession then
         matchedSession.winnerName   = shortWin
         matchedSession.winnerClass  = winClass
         matchedSession.winnerDetail = detailText or "Won"
     end
 
-    -- Update matching droppedItem entry (prefer one linked to matchedSession, else latest unclaimed matching itemID)
+    -- Only record Epic BoP items, Tier Tokens, Mounts & Pets in the Loot Summary / Report table
+    if not qualifies then
+        self:SaveRaidLootState()
+        self:RefreshAllUI()
+        return
+    end
+
     local matchedDrop = nil
     if matchedSession then
         for i = #self.raidState.droppedItems, 1, -1 do
@@ -1404,47 +1921,33 @@ function HR:RecordItemWinner(itemLink, winnerName, detailText, sessionRef)
             end
         end
     end
+
     if not matchedDrop then
-        for i = #self.raidState.droppedItems, 1, -1 do
-            local d = self.raidState.droppedItems[i]
-            if d.itemID == itemID and not d.winner then
-                matchedDrop = d
-                break
-            end
-        end
+        local srcLabel = (winSource == "GROUP_LOOT") and "Group Loot" or (matchedSession and "Raid Warning" or "")
+        matchedDrop = self:RecordDroppedItem(itemLink, srcLabel, matchedSession, winSource, false, nil)
     end
-    if not matchedDrop then
-        matchedDrop = self:RecordDroppedItem(itemLink, "", matchedSession)
-    end
+
     if matchedDrop then
         matchedDrop.winner      = shortWin
         matchedDrop.winnerClass = winClass or matchedDrop.winnerClass
         matchedDrop.winDetail   = detailText or "Won"
+        matchedDrop.winSource   = winSource or matchedDrop.winSource or (matchedSession and "RAID_SESSION" or "GROUP_LOOT")
+        matchedDrop.queued      = false
+        matchedDrop.queuedBy    = nil
         if matchedSession and not matchedDrop.session then
             matchedDrop.session = matchedSession
         end
     end
 
+    self:SaveRaidLootState()
     self:RefreshAllUI()
 end
 
 function HR:StartNewLootSession(itemLink)
     self:UpdateClassCache()
-    local current = GetCurrentSession()
     local newID = ExtractItemID(itemLink)
 
-    -- Same item linked again -> keep existing bids & rolls intact
-    if current and current.itemLink == itemLink then
-        self.raidState.trackingActive = true
-        self.raidState.viewIndex = #self.raidState.sessions
-        if HighRollerDB.settings.autoOpenTracker then
-            self:OpenRaidTracker(nil)
-        end
-        self:RefreshRaidTrackerUI()
-        return
-    end
-
-    -- Different item linked -> cancel countdown, archive old, start fresh session
+    -- Always cancel active countdown, archive any previous session, and open a fresh view (even for the same item)
     self:StopCountdown(true)
 
     local icon = select(10, GetItemInfo(itemLink)) or "Interface\\Icons\\INV_Misc_QuestionMark"
@@ -1467,20 +1970,60 @@ function HR:StartNewLootSession(itemLink)
     self.raidState.viewIndex = #self.raidState.sessions
     self.raidState.trackingActive = true
 
-    -- Link to an existing unclaimed droppedItem with the same itemID, or create a new droppedItem
-    local linkedDrop = nil
-    for i = #self.raidState.droppedItems, 1, -1 do
-        local d = self.raidState.droppedItems[i]
-        if d.itemID == newID and not d.winner and not d.session then
-            linkedDrop = d
-            d.session = session
-            break
+    -- Clear any pending single-item bulk buffer entry for this itemID so it won't double-queue
+    if newID then
+        for _, bucket in pairs(self.raidState.pendingBulkLoot) do
+            if type(bucket.items) == "table" then
+                for idx = #bucket.items, 1, -1 do
+                    if bucket.items[idx].itemID == newID then
+                        table.remove(bucket.items, idx)
+                        break
+                    end
+                end
+            end
         end
     end
-    if not linkedDrop then
-        self:RecordDroppedItem(itemLink, "Raid Warning", session)
+
+    -- Link to an existing queued/non-session entry for this itemID (e.g. ML self-loot or bulk-queued item,
+    -- or an item looted earlier before being put up for bid/roll), clearing any holder/prior name.
+    local qualifies = self:IsEpicBoPOrTierToken(itemLink)
+    local repurposedDrop = nil
+    if newID then
+        -- First prefer an explicitly queued item (FIFO: oldest queued copy first)
+        for i = 1, #self.raidState.droppedItems do
+            local d = self.raidState.droppedItems[i]
+            if d.itemID == newID and not d.session and d.queued then
+                repurposedDrop = d
+                break
+            end
+        end
+        -- Otherwise check if an item looted outside /rw is now being rolled/bid
+        if not repurposedDrop then
+            for i = #self.raidState.droppedItems, 1, -1 do
+                local d = self.raidState.droppedItems[i]
+                if d.itemID == newID and not d.session then
+                    repurposedDrop = d
+                    break
+                end
+            end
+        end
     end
 
+    if repurposedDrop then
+        repurposedDrop.winner      = nil
+        repurposedDrop.winnerClass = nil
+        repurposedDrop.winDetail   = nil
+        repurposedDrop.winSource   = "RAID_SESSION"
+        repurposedDrop.source      = "Raid Warning"
+        repurposedDrop.queued      = false
+        repurposedDrop.queuedBy    = nil
+        repurposedDrop.session     = session
+    elseif qualifies then
+        -- Record qualifying /rw items in the loot table immediately (preserved even if unclaimed)
+        self:RecordDroppedItem(itemLink, "Raid Warning", session, "RAID_SESSION", false, nil)
+    end
+
+    self:SaveRaidLootState()
     if HighRollerDB.settings.autoOpenTracker then
         self:OpenRaidTracker(nil)
     end
@@ -1489,6 +2032,11 @@ end
 
 function HR:OnRaidWarning(msg, sender)
     if not sender or not self:IsSenderRLOrAssist(sender) then return end
+
+    if msg and self.raidState.ignoreOwnRW[msg] and ShortName(sender) == ShortName(UnitName("player")) then
+        self.raidState.ignoreOwnRW[msg] = nil
+        return
+    end
 
     local itemLink = ExtractItemLink(msg)
     if itemLink then
@@ -1538,6 +2086,7 @@ function HR:ProcessPotentialBid(msg, sender)
             session.bidByName[shortSender] = entry
             table.insert(session.bids, entry)
         end
+        self:SaveRaidLootState()
         self:RefreshAllUI()
 
     -- Rule 2: Immediate next line from same player is strictly OS / os / Os
@@ -1546,6 +2095,7 @@ function HR:ProcessPotentialBid(msg, sender)
         if entry and entry.awaitingOS then
             entry.isOS = true
             entry.awaitingOS = false
+            self:SaveRaidLootState()
             self:RefreshAllUI()
         end
     else
@@ -1598,22 +2148,87 @@ function HR:OnSystemMessage(msg)
     }
     session.rollByName[shortRoller] = entry
     table.insert(session.rolls, entry)
+    self:SaveRaidLootState()
     self:RefreshAllUI()
 end
 
 function HR:OnLootChatMessage(msg)
-    if not IsInGroupOrRaid() then return end
+    if not msg or msg == "" then return end
+    if not IsInGroupOrRaid() and not self.raidState.isTestMode then return end
 
+    -- Ignore Group Loot Disenchant roll wins
+    if string.match(msg, LOOT_WON_SELF_DE_PAT) or string.match(msg, LOOT_WON_OTHER_DE_PAT) then
+        return
+    end
+
+    -- 1. Check Group Loot roll wins ("You won: [Item]" / "<Player> won: [Item]")
+    local glWinner, glDetail
+    local sVal1, sVal2 = string.match(msg, LOOT_WON_SELF_NEED_PAT)
+    if sVal1 then
+        glWinner = UnitName("player")
+        local num = tonumber(sVal1) or tonumber(sVal2)
+        glDetail = num and ("Group Loot (Need " .. tostring(num) .. ")") or "Group Loot (Need)"
+    end
+    if not glWinner then
+        sVal1, sVal2 = string.match(msg, LOOT_WON_SELF_GREED_PAT)
+        if sVal1 then
+            glWinner = UnitName("player")
+            local num = tonumber(sVal1) or tonumber(sVal2)
+            glDetail = num and ("Group Loot (Greed " .. tostring(num) .. ")") or "Group Loot (Greed)"
+        end
+    end
+    if not glWinner and string.match(msg, LOOT_WON_SELF_PATTERN) then
+        glWinner = UnitName("player")
+        glDetail = "Group Loot"
+    end
+    if not glWinner then
+        local pName, pVal1, pVal2 = string.match(msg, LOOT_WON_OTHER_NEED_PAT)
+        if pName then
+            glWinner = pName
+            local num = tonumber(pVal1) or tonumber(pVal2)
+            glDetail = num and ("Group Loot (Need " .. tostring(num) .. ")") or "Group Loot (Need)"
+        end
+    end
+    if not glWinner then
+        local pName, pVal1, pVal2 = string.match(msg, LOOT_WON_OTHER_GREED_PAT)
+        if pName then
+            glWinner = pName
+            local num = tonumber(pVal1) or tonumber(pVal2)
+            glDetail = num and ("Group Loot (Greed " .. tostring(num) .. ")") or "Group Loot (Greed)"
+        end
+    end
+    if not glWinner then
+        local pName = string.match(msg, LOOT_WON_OTHER_PATTERN)
+        if pName then
+            glWinner = pName
+            glDetail = "Group Loot"
+        end
+    end
+
+    if glWinner then
+        local itemLink = ExtractItemLink(msg)
+        if itemLink and self:IsEpicBoPOrTierToken(itemLink) then
+            local itemID = ExtractItemID(itemLink)
+            if itemID then
+                local dedupeKey = ShortName(glWinner) .. ":" .. tostring(itemID)
+                self.raidState.recentGroupLootWins[dedupeKey] = GetTime()
+            end
+            self:RecordItemWinner(itemLink, glWinner, glDetail or "Group Loot", nil, "GROUP_LOOT")
+        end
+        return
+    end
+
+    -- 2. Check direct loot receipt ("<Player> receives loot: [Item]" / "You receive loot: [Item]")
     local recipient, linkStr
-    local p1, p2 = string.match(msg or "", LOOT_OTHER_MULT_PAT)
+    local p1, p2 = string.match(msg, LOOT_OTHER_MULT_PAT)
     if p1 and p2 then
         recipient, linkStr = p1, p2
     else
-        p1, p2 = string.match(msg or "", LOOT_OTHER_PATTERN)
+        p1, p2 = string.match(msg, LOOT_OTHER_PATTERN)
         if p1 and p2 then
             recipient, linkStr = p1, p2
         else
-            local s1 = string.match(msg or "", LOOT_SELF_MULT_PAT) or string.match(msg or "", LOOT_SELF_PATTERN)
+            local s1 = string.match(msg, LOOT_SELF_MULT_PAT) or string.match(msg, LOOT_SELF_PATTERN)
             if s1 then
                 recipient = UnitName("player")
                 linkStr = s1
@@ -1625,51 +2240,133 @@ function HR:OnLootChatMessage(msg)
     local itemLink = ExtractItemLink(linkStr)
     if not itemLink then return end
 
-    local _, _, rarity = GetItemInfo(itemLink)
     local itemID = ExtractItemID(itemLink)
+    local shortRec = ShortName(recipient)
+    local now = GetTime()
 
-    local matchedSession = nil
-    for i = #self.raidState.sessions, 1, -1 do
-        if self.raidState.sessions[i].itemID == itemID then
-            matchedSession = self.raidState.sessions[i]
-            break
+    -- Ignore duplicate LOOT_ITEM firing immediately after a Group Loot win or GiveMasterLoot award
+    if itemID then
+        local dedupeKey = shortRec .. ":" .. tostring(itemID)
+        local glTime = self.raidState.recentGroupLootWins[dedupeKey]
+        if glTime and (now - glTime) <= 10 then
+            self.raidState.recentGroupLootWins[dedupeKey] = nil
+            return
+        end
+        local awTime = self.raidState.recentAwardedLoot[dedupeKey]
+        if awTime and (now - awTime) <= 10 then
+            self.raidState.recentAwardedLoot[dedupeKey] = nil
+            return
         end
     end
 
-    if (rarity and rarity >= 3) or matchedSession then
-        local detail = "Looted"
-        if matchedSession then
-            local shortRec = ShortName(recipient)
-            if matchedSession.bidByName[shortRec] and not matchedSession.bidByName[shortRec].ignored then
-                local b = matchedSession.bidByName[shortRec]
-                detail = tostring(b.amount) .. (b.isOS and " [OS] Bid" or " Bid")
-            elseif matchedSession.rollByName[shortRec] and not matchedSession.rollByName[shortRec].ignored then
-                local r = matchedSession.rollByName[shortRec]
-                detail = tostring(r.value) .. (r.category == "OS" and " OS Roll" or " Roll")
+    -- 2a. Finalize a winner ONLY if an unclaimed /rw session exists AND recipient actually bid/rolled on it
+    local matchedSession = nil
+    for i = #self.raidState.sessions, 1, -1 do
+        local s = self.raidState.sessions[i]
+        if s.itemID == itemID and not s.winnerName then
+            if (s.bidByName[shortRec] and not s.bidByName[shortRec].ignored)
+                or (s.rollByName[shortRec] and not s.rollByName[shortRec].ignored) then
+                matchedSession = s
+                break
             end
         end
-        self:RecordItemWinner(itemLink, recipient, detail, matchedSession)
+    end
+
+    if matchedSession then
+        local detail = "Won"
+        if matchedSession.bidByName[shortRec] and not matchedSession.bidByName[shortRec].ignored then
+            local b = matchedSession.bidByName[shortRec]
+            detail = tostring(b.amount) .. (b.isOS and " [OS] Bid" or " Bid")
+        elseif matchedSession.rollByName[shortRec] and not matchedSession.rollByName[shortRec].ignored then
+            local r = matchedSession.rollByName[shortRec]
+            detail = tostring(r.value) .. (r.category == "OS" and " OS Roll" or " Roll")
+        end
+        self:RecordItemWinner(itemLink, recipient, detail, matchedSession, "RAID_SESSION")
+        return
+    end
+
+    -- 2b. Master Looter self-loot & bulk loot -> record as Queued loot (never as a winner)
+    if not self:IsEpicBoPOrTierToken(itemLink) then return end
+
+    local lootMethod = GetLootMethod()
+    local mlName = self:GetMasterLooterName()
+
+    if mlName and strlower(shortRec) == strlower(mlName) then
+        self:QueueLootItem(itemLink, shortRec, "Queued (ML)")
+        return
+    end
+
+    if lootMethod == "master" then
+        local BULK_WINDOW = 120
+        local bucket = self.raidState.pendingBulkLoot[shortRec]
+        if not bucket then
+            bucket = { items = {}, lastBulkTime = 0 }
+            self.raidState.pendingBulkLoot[shortRec] = bucket
+        end
+
+        -- Prune stale single-item entries outside the bulk window
+        for idx = #bucket.items, 1, -1 do
+            if (now - bucket.items[idx].time) > BULK_WINDOW then
+                table.remove(bucket.items, idx)
+            end
+        end
+
+        -- If this player is already receiving bulk loot in this window, queue immediately
+        if bucket.lastBulkTime > 0 and (now - bucket.lastBulkTime) <= BULK_WINDOW then
+            bucket.lastBulkTime = now
+            self:QueueLootItem(itemLink, shortRec, "Queued (Bulk)")
+            return
+        end
+
+        table.insert(bucket.items, { link = itemLink, itemID = itemID, time = now })
+        if #bucket.items >= 2 then
+            bucket.lastBulkTime = now
+            for _, it in ipairs(bucket.items) do
+                self:QueueLootItem(it.link, shortRec, "Queued (Bulk)")
+            end
+            wipe(bucket.items)
+        end
     end
 end
 
 function HR:GetPlayerWinCounts()
     local counts = {}
+    local currentSession = GetCurrentSession()
     local coveredSessions = {}
 
     for _, d in ipairs(self.raidState.droppedItems) do
         if d.session then
             coveredSessions[d.session] = true
         end
-        if d.winner and d.winner ~= "" then
-            local short = ShortName(d.winner)
-            counts[short] = (counts[short] or 0) + 1
+        if self:IsEpicBoPOrTierToken(d.itemLink) then
+            local winner = d.winner
+            -- For completed prior /rw sessions where loot was traded (no loot chat event), count the clear single winner
+            if not winner and d.session and d.session ~= currentSession then
+                local leaders = self:GetTopContenders(d.session)
+                if #leaders == 1 then
+                    winner = leaders[1]
+                end
+            end
+            if winner and winner ~= "" then
+                local short = ShortName(winner)
+                counts[short] = (counts[short] or 0) + 1
+            end
         end
     end
 
     for _, s in ipairs(self.raidState.sessions) do
-        if not coveredSessions[s] and s.winnerName and s.winnerName ~= "" then
-            local short = ShortName(s.winnerName)
-            counts[short] = (counts[short] or 0) + 1
+        if not coveredSessions[s] and self:IsEpicBoPOrTierToken(s.itemLink) then
+            local winner = s.winnerName
+            if not winner and s ~= currentSession then
+                local leaders = self:GetTopContenders(s)
+                if #leaders == 1 then
+                    winner = leaders[1]
+                end
+            end
+            if winner and winner ~= "" then
+                local short = ShortName(winner)
+                counts[short] = (counts[short] or 0) + 1
+            end
         end
     end
 
@@ -1788,23 +2485,80 @@ function HR:GetTopContenders(session)
     return {}, nil, nil, ""
 end
 
-function HR:AnnounceWinner()
+function HR:PostTrackerViewToRaidChat()
     local session = GetViewedSession()
     if not session then
-        self:Print("No tracked item to announce.")
+        self:Print("No tracked item to post.")
         return
     end
-    local winners, topVal, _, tag = self:GetTopContenders(session)
-    if #winners == 0 then
-        self:SendRaidMessage("No eligible rolls or bids for " .. session.itemLink .. ".", true)
-    elseif #winners == 1 then
-        local cleanTag = strtrim(tag)
-        self:RecordItemWinner(session.itemLink, winners[1], tostring(topVal) .. " " .. cleanTag, session)
-        self:SendRaidMessage(string.format("%s wins %s with %d%s!", winners[1], session.itemLink, topVal, tag), true)
+
+    local activeView = (HighRollerDB and HighRollerDB.raidTracker and HighRollerDB.raidTracker.activeView) or "BIDS"
+    local itemLabel = session.itemLink or session.itemName or "Item"
+    local prefix
+    local parts = {}
+
+    if activeView == "BIDS" then
+        local sortedBids = self:GetSortedBids(session)
+        local rank = 0
+        for _, b in ipairs(sortedBids) do
+            if not b.ignored then
+                rank = rank + 1
+                local osTag = b.isOS and " [OS]" or ""
+                table.insert(parts, string.format("%d. %s %d%s", rank, b.name, b.amount, osTag))
+            end
+        end
+        if #parts == 0 then
+            self:Print("No eligible bids to post for this item.")
+            return
+        end
+        prefix = "Bids for " .. itemLabel .. ": "
     else
-        self:SendRaidMessage(string.format("TIE for %s (%d%s): %s - Please re-roll!",
-            session.itemLink, topVal, tag, table.concat(winners, ", ")), true)
+        local sortedRolls = self:GetSortedRolls(session)
+        local rank = 0
+        for _, r in ipairs(sortedRolls) do
+            if not r.ignored then
+                rank = rank + 1
+                local tag = ""
+                if r.category == "OS" then
+                    tag = " (OS)"
+                elseif r.category == "INVALID" then
+                    tag = string.format(" (%d-%d)", r.low, r.high)
+                end
+                table.insert(parts, string.format("%d. %s %d%s", rank, r.name, r.value, tag))
+            end
+        end
+        if #parts == 0 then
+            self:Print("No eligible rolls to post for this item.")
+            return
+        end
+        prefix = "Rolls for " .. itemLabel .. ": "
     end
+
+    local MAX_CHAT_LEN = 240
+    local contPrefix = (activeView == "BIDS") and "Bids (cont.): " or "Rolls (cont.): "
+    if (#prefix + #parts[1]) > MAX_CHAT_LEN then
+        prefix = ((activeView == "BIDS") and "Bids for " or "Rolls for ")
+            .. (session.itemName or ExtractPlainItemName(itemLabel)) .. ": "
+    end
+
+    local currentLine = prefix
+    local hasEntriesOnLine = false
+    for _, entryStr in ipairs(parts) do
+        local sep = hasEntriesOnLine and ", " or ""
+        if hasEntriesOnLine and (#currentLine + #sep + #entryStr > MAX_CHAT_LEN) then
+            self:SendRaidMessage(currentLine, false)
+            currentLine = contPrefix .. entryStr
+            hasEntriesOnLine = true
+        else
+            currentLine = currentLine .. sep .. entryStr
+            hasEntriesOnLine = true
+        end
+    end
+    if hasEntriesOnLine then
+        self:SendRaidMessage(currentLine, false)
+    end
+
+    self:SendRaidMessage(string.format("High Roller by %s - %s", ADDON_AUTHOR, ADDON_URL), false)
 end
 
 function HR:AnnounceTieBreak()
@@ -1834,7 +2588,9 @@ countdownFrame:SetScript("OnUpdate", function(self, elapsed)
     if st.countdownLeft <= 0 then
         st.countdownActive = false
         self:Hide()
-        HR:AnnounceWinner()
+        local session = GetViewedSession()
+        local itemText = (session and session.itemLink) or "loot"
+        HR:Print("Countdown finished for " .. itemText .. ".")
         HR:RefreshRaidTrackerUI()
         return
     end
@@ -1843,7 +2599,11 @@ countdownFrame:SetScript("OnUpdate", function(self, elapsed)
         st.countdownWarned5 = true
         local session = GetViewedSession()
         local itemText = (session and session.itemLink) or "loot"
-        HR:SendRaidMessage("5 seconds left on " .. itemText .. "!", true)
+        local cdMsg = "5 seconds left on " .. itemText .. "!"
+        if HR:IsPlayerRLOrAssist() then
+            st.ignoreOwnRW[cdMsg] = true
+        end
+        HR:SendRaidMessage(cdMsg, true)
     end
 
     if sec ~= st.countdownLastSec then
@@ -1866,7 +2626,11 @@ function HR:ToggleCountdown()
     self.raidState.countdownLeft    = 10
     self.raidState.countdownWarned5 = false
     self.raidState.countdownLastSec = 10
-    self:SendRaidMessage("10 seconds remaining for " .. session.itemLink .. "!", true)
+    local cdMsg = "10 seconds remaining for " .. session.itemLink .. "!"
+    if self:IsPlayerRLOrAssist() then
+        self.raidState.ignoreOwnRW[cdMsg] = true
+    end
+    self:SendRaidMessage(cdMsg, true)
     countdownFrame:Show()
     self:RefreshRaidTrackerUI()
 end
@@ -1924,8 +2688,12 @@ function HR:AwardTrackedItemTo(targetName, reasonDetail)
     for i = 1, 40 do
         local cand = GetMasterLootCandidate(i)
         if cand and strlower(ShortName(cand)) == needle then
+            local dedupeKey = ShortName(cand) .. ":" .. tostring(session.itemID)
+            self.raidState.recentAwardedLoot[dedupeKey] = GetTime()
             GiveMasterLoot(targetSlot, i)
-            self:RecordItemWinner(session.itemLink, cand, reasonDetail or "Awarded", session)
+            if reasonDetail ~= "Disenchant" then
+                self:RecordItemWinner(session.itemLink, cand, reasonDetail or "Awarded", session, "RAID_SESSION")
+            end
             self:Print("Awarded " .. session.itemLink .. " to |cffffd100" .. cand .. "|r.")
             return
         end
@@ -1939,10 +2707,6 @@ function HR:CaptureBossLoot()
     if not IsInGroupOrRaid() then return end
     self:UpdateClassCache()
 
-    local corpseGUID = (UnitExists("target") and UnitIsDead("target")) and UnitGUID("target") or nil
-    local corpseName = (UnitExists("target") and UnitIsDead("target")) and (UnitName("target") or "") or ""
-    local alreadyScanned = corpseGUID and self.raidState.scannedCorpses[corpseGUID]
-
     local numLoot = GetNumLootItems()
     for slot = 1, numLoot do
         local icon, name, _, rarity = GetLootSlotInfo(slot)
@@ -1954,14 +2718,7 @@ function HR:CaptureBossLoot()
                 icon   = icon or "Interface\\Icons\\INV_Misc_QuestionMark",
                 rarity = rarity,
             })
-            if not alreadyScanned then
-                self:RecordDroppedItem(link, corpseName, nil)
-            end
         end
-    end
-
-    if corpseGUID then
-        self.raidState.scannedCorpses[corpseGUID] = true
     end
 
     self:RefreshAllUI()
@@ -1969,7 +2726,7 @@ end
 
 -- Built-In Solo Test Harness (/hr test + Test Mode button in Config)
 function HR:RunSoloTest()
-    self:ClearRaidTrackerData(true)
+    self:ClearRaidTrackerData(true, true)
     self.raidState.isTestMode = true
 
     -- Populate mock raid roster classes across all 10 WotLK classes
@@ -1989,10 +2746,13 @@ function HR:RunSoloTest()
         self.raidState.classCache[playerName] = classFile
     end
 
-    -- Real WotLK 3.3.5a item hyperlinks
+    -- Real WotLK 3.3.5a Epic BoP, Tier Token & Boss Mount item hyperlinks
     local linkPhylactery = "|cffa335ee|Hitem:50365:0:0:0:0:0:0:0:80|h[Phylactery of the Nameless Lich]|h|r"
     local linkGlorenzelg = "|cffa335ee|Hitem:50730:0:0:0:0:0:0:0:80|h[Glorenzelg, High-Blade of the Silver Hand]|h|r"
-    local linkSaronite   = "|cffa335ee|Hitem:49908:0:0:0:0:0:0:0:80|h[Primordial Saronite]|h|r"
+    local linkTierToken  = "|cffa335ee|Hitem:52026:0:0:0:0:0:0:0:80|h[Conqueror's Mark of Sanctification]|h|r"
+    local linkInvincible = "|cffa335ee|Hitem:50818:0:0:0:0:0:0:0:80|h[Invincible's Reins]|h|r"
+    local linkColdwraith = "|cffa335ee|Hitem:50620:0:0:0:0:0:0:0:80|h[Coldwraith Links]|h|r"
+    local linkRingQueued = "|cffa335ee|Hitem:50618:0:0:0:0:0:0:0:80|h[Frostbrood Sapphire Ring]|h|r"
     local linkDBW        = "|cffa335ee|Hitem:50363:0:0:0:0:0:0:0:80|h[Deathbringer's Will]|h|r"
 
     local rollFmt = RANDOM_ROLL_RESULT or "%s rolls %d (%d-%d)"
@@ -2002,19 +2762,10 @@ function HR:RunSoloTest()
 
     -- Populate Boss Loot Queue for solo testing
     local testBossItems = {
-        { link = linkPhylactery, name = "Phylactery of the Nameless Lich",         rarity = 4 },
-        { link = linkGlorenzelg, name = "Glorenzelg, High-Blade of the Silver Hand", rarity = 4 },
-        { link = linkSaronite,   name = "Primordial Saronite",                     rarity = 4 },
-        { link = linkDBW,        name = "Deathbringer's Will",                     rarity = 4 },
+        linkPhylactery, linkGlorenzelg, linkTierToken, linkInvincible, linkColdwraith, linkDBW,
     }
-    for _, item in ipairs(testBossItems) do
-        local icon = select(10, GetItemInfo(item.link)) or "Interface\\Icons\\INV_Misc_QuestionMark"
-        table.insert(self.raidState.bossLoot, {
-            link   = item.link,
-            name   = item.name,
-            icon   = icon,
-            rarity = item.rarity,
-        })
+    for _, link in ipairs(testBossItems) do
+        self:AddToBossLootQueue(link)
     end
 
     -- Session 1 (Completed): Phylactery -> Guldan wins [1]
@@ -2025,7 +2776,7 @@ function HR:RunSoloTest()
     self:ProcessPotentialBid("os",   "Velen")
     SimRoll("Guldan", 84, 1, 100)
     SimRoll("Jaina",  62, 1, 100)
-    self:RecordItemWinner(linkPhylactery, "Guldan", "1500 (Bid)", GetCurrentSession())
+    self:RecordItemWinner(linkPhylactery, "Guldan", "1500 (Bid)", GetCurrentSession(), "RAID_SESSION")
 
     -- Session 2 (Completed): Glorenzelg -> Garrosh wins [1]
     self:StartNewLootSession(linkGlorenzelg)
@@ -2036,15 +2787,24 @@ function HR:RunSoloTest()
     SimRoll("Garrosh", 91, 1, 100)
     SimRoll("Arthas",  77, 1, 100)
     SimRoll("Uther",   88, 1, 99)
-    self:RecordItemWinner(linkGlorenzelg, "Garrosh", "2500 (Bid)", GetCurrentSession())
+    self:RecordItemWinner(linkGlorenzelg, "Garrosh", "2500 (Bid)", GetCurrentSession(), "RAID_SESSION")
 
-    -- Additional Loot Summary drop: Primordial Saronite -> Guldan wins [2]
-    local orbDrop = self:RecordDroppedItem(linkSaronite, "Icecrown Citadel (Test)", nil)
-    if orbDrop then
-        self:RecordItemWinner(linkSaronite, "Guldan", "95 (Roll)", nil)
-    end
+    -- Tier Token won via Group Loot -> Guldan wins [2]
+    self:RecordItemWinner(linkTierToken, "Guldan", "Group Loot (Need 95)", nil, "GROUP_LOOT")
 
-    -- Session 3 (Active): Deathbringer's Will (tests MS/OS bids, MS>OS sort toggle, MS/OS/invalid rolls, & [1]/[2] win badges)
+    -- Boss Mount won via Group Loot -> Sylvanas wins [1]
+    self:RecordItemWinner(linkInvincible, "Sylvanas", "Group Loot (Need 99)", nil, "GROUP_LOOT")
+
+    -- Session 3 (Unclaimed): Coldwraith Links linked in /rw with 0 bids & 0 rolls (remains in loot table as Unclaimed)
+    self:StartNewLootSession(linkColdwraith)
+
+    -- Queued ML loot waiting to be rolled later (shows as Queued in All Drops & Reports, holder name NOT in Winner column)
+    self:QueueLootItem(linkRingQueued, "Uther", "Queued (ML)")
+
+    -- Simulate ML (Uther) queuing DBW before putting it up for /rw bid/roll (transitions cleanly from Queued -> active session)
+    self:QueueLootItem(linkDBW, "Uther", "Queued (ML)")
+
+    -- Session 4 (Active): Deathbringer's Will (tests MS/OS bids, MS>OS sort toggle, MS/OS/invalid rolls, & [1]/[2] win badges)
     self:StartNewLootSession(linkDBW)
     self:ProcessPotentialBid("3000", "Garrosh")
     self:ProcessPotentialBid("3500", "Valeera")
@@ -2061,12 +2821,36 @@ function HR:RunSoloTest()
 
     self:OpenRaidTracker(nil)
     self:RefreshAllUI()
-    self:Print("Solo Test Mode loaded: 3 simulated sessions, class-colored bids/rolls, [1]/[2] win counters, and Loot Summary reports ready. Click |cffffd100Clear|r in the Tracker to reset.")
+    self:Print("Solo Test Mode loaded: Epic BoP, Tier Token, Boss Mount, Queued ML loot, and Unclaimed drops ready. Click |cffffd100Clear|r in the Tracker to exit Test Mode.")
 end
 
 -- ============================================================================
 -- 6. Loot Report Data & Formatters (Text-Only, Discord Markdown, Black-BG HTML)
 -- ============================================================================
+
+function HR:ResolveLootEntryWinner(dropEntry, sess)
+    local winner = (dropEntry and dropEntry.winner) or (sess and sess.winnerName)
+    local winnerClass = (dropEntry and dropEntry.winnerClass) or (sess and sess.winnerClass)
+    local detail = (dropEntry and dropEntry.winDetail) or (sess and sess.winnerDetail)
+
+    -- If a /rw bid/roll session wasn't finalized via direct loot (e.g. RL traded the item),
+    -- use the clear single top bidder/roller from that session.
+    if not winner and sess then
+        local leaders, topVal, _, tag = self:GetTopContenders(sess)
+        if #leaders == 1 then
+            winner = leaders[1]
+            winnerClass = self:GetPlayerClassFile(winner)
+            local isCurrent = (sess == GetCurrentSession())
+            detail = (isCurrent and "Leading: " or "") .. tostring(topVal) .. tag
+        end
+    end
+
+    if winner and not winnerClass then
+        winnerClass = self:GetPlayerClassFile(winner)
+    end
+
+    return winner, winnerClass, detail
+end
 
 function HR:BuildLootReportData()
     local items = {}
@@ -2078,63 +2862,44 @@ function HR:BuildLootReportData()
             coveredSessions[sess] = true
         end
 
-        local winner = d.winner
-        local winnerClass = d.winnerClass
-        local detail = d.winDetail
-
-        -- If not finalized yet, check if its linked session has a clear single leader
-        if not winner and sess then
-            local leaders, topVal, _, tag = self:GetTopContenders(sess)
-            if #leaders == 1 then
-                winner = leaders[1]
-                winnerClass = self:GetPlayerClassFile(winner)
-                detail = "Leading: " .. tostring(topVal) .. tag
-            end
+        if self:IsEpicBoPOrTierToken(d.itemLink) then
+            local winner, winnerClass, detail = self:ResolveLootEntryWinner(d, sess)
+            local isQueued = (not winner) and (d.queued and true or false)
+            local statusDetail = winner and (detail or "Won") or (isQueued and "Queued" or "Unclaimed")
+            table.insert(items, {
+                itemLink    = d.itemLink,
+                itemName    = d.itemName or ExtractPlainItemName(d.itemLink),
+                source      = d.source or "",
+                winner      = winner,
+                winnerClass = winnerClass,
+                detail      = statusDetail,
+                winDetail   = winner and (detail or "Won") or nil,
+                queued      = isQueued,
+                queuedBy    = isQueued and d.queuedBy or nil,
+                bids        = sess and self:GetSortedBids(sess) or {},
+                rolls       = sess and self:GetSortedRolls(sess) or {},
+                session     = sess,
+            })
         end
-
-        if winner and not winnerClass then
-            winnerClass = self:GetPlayerClassFile(winner)
-        end
-
-        local bids  = sess and self:GetSortedBids(sess) or {}
-        local rolls = sess and self:GetSortedRolls(sess) or {}
-
-        table.insert(items, {
-            itemName    = d.itemName or ExtractPlainItemName(d.itemLink),
-            source      = d.source or "",
-            winner      = winner,
-            winnerClass = winnerClass,
-            detail      = detail or (winner and "Won" or "Unclaimed"),
-            bids        = bids,
-            rolls       = rolls,
-        })
     end
 
-    -- Include any session that was not linked to a droppedItem (defensive fallback)
+    -- Include any qualifying /rw session that was not linked to a droppedItem (even if unclaimed)
     for _, sess in ipairs(self.raidState.sessions) do
-        if not coveredSessions[sess] then
-            local winner = sess.winnerName
-            local winnerClass = sess.winnerClass
-            local detail = sess.winnerDetail
-            if not winner then
-                local leaders, topVal, _, tag = self:GetTopContenders(sess)
-                if #leaders == 1 then
-                    winner = leaders[1]
-                    winnerClass = self:GetPlayerClassFile(winner)
-                    detail = "Leading: " .. tostring(topVal) .. tag
-                end
-            end
-            if winner and not winnerClass then
-                winnerClass = self:GetPlayerClassFile(winner)
-            end
+        if not coveredSessions[sess] and self:IsEpicBoPOrTierToken(sess.itemLink) then
+            local winner, winnerClass, detail = self:ResolveLootEntryWinner(nil, sess)
             table.insert(items, {
+                itemLink    = sess.itemLink,
                 itemName    = sess.itemName or ExtractPlainItemName(sess.itemLink),
                 source      = "Raid Warning",
                 winner      = winner,
                 winnerClass = winnerClass,
-                detail      = detail or (winner and "Won" or "Unclaimed"),
+                detail      = winner and (detail or "Won") or "Unclaimed",
+                winDetail   = winner and (detail or "Won") or nil,
+                queued      = false,
+                queuedBy    = nil,
                 bids        = self:GetSortedBids(sess),
                 rolls       = self:GetSortedRolls(sess),
+                session     = sess,
             })
         end
     end
@@ -2181,6 +2946,7 @@ function HR:GenerateLootReportText()
 
     local lines = {}
     table.insert(lines, "High Roller Loot Report (" .. GetFooterText() .. ")")
+    table.insert(lines, "Website: " .. ADDON_URL)
     table.insert(lines, "Date: " .. date("%Y-%m-%d %H:%M"))
     table.insert(lines, "========================================")
 
@@ -2188,6 +2954,8 @@ function HR:GenerateLootReportText()
         table.insert(lines, string.format("%d. %s", i, item.itemName))
         if item.winner then
             table.insert(lines, string.format("   Winner: %s (%s)", item.winner, item.detail))
+        elseif item.queued then
+            table.insert(lines, "   Status: Queued")
         else
             table.insert(lines, "   Winner: Unclaimed")
         end
@@ -2219,12 +2987,15 @@ function HR:GenerateLootReportDiscord()
     local lines = {}
     table.insert(lines, "**High Roller Loot Report**")
     table.insert(lines, "*" .. GetFooterText() .. " | " .. date("%Y-%m-%d %H:%M") .. "*")
+    table.insert(lines, "Website: " .. ADDON_URL)
     table.insert(lines, "")
 
     for i, item in ipairs(data) do
         table.insert(lines, string.format("**%d. %s**", i, item.itemName))
         if item.winner then
             table.insert(lines, string.format("- **Winner:** %s *(%s)*", item.winner, item.detail))
+        elseif item.queued then
+            table.insert(lines, "- **Status:** *Queued*")
         else
             table.insert(lines, "- **Winner:** *Unclaimed*")
         end
@@ -2285,9 +3056,12 @@ function HR:GenerateLootReportHTML()
     table.insert(lines, "  th { background-color: #1A1A1A; color: #FFFFFF; }")
     table.insert(lines, "  tr:nth-child(even) { background-color: #111111; }")
     table.insert(lines, "  .unclaimed { color: #888888; font-style: italic; }")
+    table.insert(lines, "  .queued { color: #FFCC00; font-style: italic; }")
     table.insert(lines, "  .detail { color: #CCCCCC; }")
     table.insert(lines, "  .os { color: #FF9900; font-weight: bold; }")
     table.insert(lines, "  .footer { margin-top: 14px; color: #888888; font-size: 12px; }")
+    table.insert(lines, "  .footer a { color: #33FF99; text-decoration: none; }")
+    table.insert(lines, "  .footer a:hover { text-decoration: underline; }")
     table.insert(lines, "</style>")
     table.insert(lines, "</head>")
     table.insert(lines, "<body>")
@@ -2306,6 +3080,9 @@ function HR:GenerateLootReportHTML()
             local hex = self:GetClassColorHex(item.winner, item.winnerClass)
             winnerHTML = string.format('<span style="color:#%s; font-weight:bold;">%s</span>', hex, EscapeHTML(item.winner))
             detailHTML = '<span class="detail">' .. EscapeHTML(item.detail) .. "</span>"
+        elseif item.queued then
+            winnerHTML = '<span class="queued">Queued</span>'
+            detailHTML = '<span class="queued">-</span>'
         else
             winnerHTML = '<span class="unclaimed">Unclaimed</span>'
             detailHTML = '<span class="unclaimed">-</span>'
@@ -2352,7 +3129,7 @@ function HR:GenerateLootReportHTML()
 
     table.insert(lines, "  </tbody>")
     table.insert(lines, "</table>")
-    table.insert(lines, '<div class="footer">' .. EscapeHTML(GetFooterText()) .. "</div>")
+    table.insert(lines, '<div class="footer">' .. EscapeHTML(GetFooterText()) .. ' | <a href="' .. EscapeHTML(ADDON_URL) .. '" target="_blank">' .. EscapeHTML(ADDON_URL) .. "</a></div>")
     table.insert(lines, "</body>")
     table.insert(lines, "</html>")
 
@@ -2369,7 +3146,7 @@ function HR:GenerateLootReportTSV()
     table.insert(lines, "Item\tWinner\tClass\tWinning Bid/Roll\tBids\tRolls")
 
     for _, item in ipairs(data) do
-        local winnerName  = item.winner or "Unclaimed"
+        local winnerName  = item.winner or (item.queued and "Queued" or "Unclaimed")
         local winnerClass = item.winner and GetClassDisplayName(item.winnerClass) or ""
         local winDetail   = item.winner and (item.detail or "Won") or ""
         local bidStr      = FormatBidsPlain(item.bids)
@@ -2384,6 +3161,9 @@ function HR:GenerateLootReportTSV()
             CleanTSVField(rollStr),
         }, "\t"))
     end
+
+    table.insert(lines, "")
+    table.insert(lines, CleanTSVField(GetFooterText()) .. "\t" .. CleanTSVField(ADDON_URL))
 
     return table.concat(lines, "\n")
 end
@@ -4064,41 +4844,20 @@ function HR:CreateLootSummaryFrame()
 end
 
 function HR:BuildWinnersSummaryList()
-    local results = {}
-    local coveredSessions = {}
-
-    for _, d in ipairs(self.raidState.droppedItems) do
-        if d.session then coveredSessions[d.session] = true end
-        if d.winner then
-            table.insert(results, {
-                itemLink    = d.itemLink,
-                itemName    = d.itemName or ExtractPlainItemName(d.itemLink),
-                winner      = d.winner,
-                winnerClass = d.winnerClass or self:GetPlayerClassFile(d.winner),
-                detail      = d.winDetail or "Won",
-                source      = d.source or "",
-                session     = d.session,
-            })
+    -- Returns strictly won Epic BoP items, Tier Tokens, Mounts & Pets
+    local all = self:BuildLootReportData()
+    local winners = {}
+    for _, item in ipairs(all) do
+        if item.winner then
+            table.insert(winners, item)
         end
     end
+    return winners
+end
 
-    for _, s in ipairs(self.raidState.sessions) do
-        if not s.winnerName then
-            local winners, topVal, _, tag = self:GetTopContenders(s)
-            if #winners == 1 then
-                table.insert(results, {
-                    itemLink    = s.itemLink,
-                    itemName    = s.itemName or ExtractPlainItemName(s.itemLink),
-                    winner      = winners[1],
-                    winnerClass = self:GetPlayerClassFile(winners[1]),
-                    detail      = "Leading: " .. tostring(topVal) .. tag,
-                    source      = "Active Roll/Bid",
-                    session     = s,
-                })
-            end
-        end
-    end
-    return results
+function HR:BuildQualifiedDropsList()
+    -- Returns complete boss loot table: won, queued, and unclaimed drops
+    return self:BuildLootReportData()
 end
 
 -- Text-only chat summary (no item links)
@@ -4112,10 +4871,13 @@ function HR:PostLootSummaryToChat()
     for _, item in ipairs(data) do
         if item.winner then
             self:SendRaidMessage(string.format("%s -> %s (%s)", item.itemName, item.winner, item.detail), false)
+        elseif item.queued then
+            self:SendRaidMessage(string.format("%s -> Queued", item.itemName), false)
         else
             self:SendRaidMessage(string.format("%s -> Unclaimed", item.itemName), false)
         end
     end
+    self:SendRaidMessage(string.format("High Roller by %s - %s", ADDON_AUTHOR, ADDON_URL), false)
 end
 
 function HR:RefreshLootSummaryUI()
@@ -4124,7 +4886,7 @@ function HR:RefreshLootSummaryUI()
 
     local view = HighRollerDB.raidTracker.lootSummaryView or "WINNERS"
     local winnersList = self:BuildWinnersSummaryList()
-    local dropsList = self.raidState.droppedItems
+    local dropsList = self:BuildQualifiedDropsList()
 
     f.winnersTab:SetText(string.format("Winners (%d)", #winnersList))
     f.dropsTab:SetText(string.format("All Drops (%d)", #dropsList))
@@ -4157,7 +4919,7 @@ function HR:RefreshLootSummaryUI()
 
     local activeList = (view == "WINNERS") and winnersList or dropsList
     if #activeList == 0 then
-        f.emptyText:SetText(view == "WINNERS" and "No winners recorded yet." or "No dropped items recorded yet.")
+        f.emptyText:SetText(view == "WINNERS" and "No winners recorded yet." or "No boss loot drops tracked yet.")
         f.emptyText:Show()
         f.scrollContent:SetHeight(1)
         return
@@ -4200,6 +4962,8 @@ function HR:RefreshLootSummaryUI()
                 local hex = self:GetClassColorHex(item.winner, item.winnerClass)
                 local detail = item.winDetail and (" |cffaaaaaa(" .. item.winDetail .. ")|r") or ""
                 row.rightText:SetText(string.format("|cff%s%s|r%s", hex, item.winner, detail))
+            elseif item.queued then
+                row.rightText:SetText("|cffffcc00Queued|r")
             else
                 row.rightText:SetText("|cff888888Unclaimed|r")
             end
@@ -4217,6 +4981,11 @@ function HR:RefreshLootSummaryUI()
                 local hex = HR:GetClassColorHex(item.winner, item.winnerClass)
                 local det = item.winDetail or item.detail or "Won"
                 GameTooltip:AddLine(string.format("Winner: |cff%s%s|r (%s)", hex, item.winner, det), 1, 1, 1)
+            elseif item.queued then
+                local holderTxt = item.queuedBy and (" (held by " .. item.queuedBy .. ")") or ""
+                GameTooltip:AddLine("Status: |cffffcc00Queued|r" .. holderTxt, 1, 1, 1)
+            else
+                GameTooltip:AddLine("Status: |cff888888Unclaimed|r", 1, 1, 1)
             end
             if item.session then
                 local sortedBids = HR:GetSortedBids(item.session)
@@ -4404,23 +5173,33 @@ function HR:CreateRaidTrackerFrame()
     emptyHint:SetText("No entries yet.")
     f.emptyHint = emptyHint
 
-    -- Compact Control Row 1: Countdown | Announce | Tie-Break | Clear
+    -- Compact Control Row 1: Countdown | Post Bids/Rolls | Tie-Break | Clear
     local cdBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-    cdBtn:SetSize(66, 20)
+    cdBtn:SetSize(64, 20)
     cdBtn:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -205)
     cdBtn:SetText("Countdown")
     cdBtn:SetScript("OnClick", function() HR:ToggleCountdown() end)
     f.cdBtn = cdBtn
 
-    local annBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-    annBtn:SetSize(62, 20)
-    annBtn:SetPoint("LEFT", cdBtn, "RIGHT", 2, 0)
-    annBtn:SetText("Announce")
-    annBtn:SetScript("OnClick", function() HR:AnnounceWinner() end)
+    local postViewBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+    postViewBtn:SetSize(66, 20)
+    postViewBtn:SetPoint("LEFT", cdBtn, "RIGHT", 2, 0)
+    postViewBtn:SetText("Post Bids")
+    postViewBtn:SetScript("OnClick", function() HR:PostTrackerViewToRaidChat() end)
+    postViewBtn:SetScript("OnEnter", function(self)
+        local view = (HighRollerDB and HighRollerDB.raidTracker and HighRollerDB.raidTracker.activeView) or "BIDS"
+        local kind = (view == "BIDS") and "bids" or "rolls"
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:AddLine("Send to Raid Chat", 0.2, 1, 0.6)
+        GameTooltip:AddLine("Post the current " .. kind .. " list to Raid chat.", 1, 1, 1)
+        GameTooltip:Show()
+    end)
+    postViewBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    f.postViewBtn = postViewBtn
 
     local tieBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-    tieBtn:SetSize(62, 20)
-    tieBtn:SetPoint("LEFT", annBtn, "RIGHT", 2, 0)
+    tieBtn:SetSize(60, 20)
+    tieBtn:SetPoint("LEFT", postViewBtn, "RIGHT", 2, 0)
     tieBtn:SetText("Tie-Break")
     tieBtn:SetScript("OnClick", function() HR:AnnounceTieBreak() end)
 
@@ -4430,13 +5209,17 @@ function HR:CreateRaidTrackerFrame()
     clearBtn:SetText("Clear")
     clearBtn:SetScript("OnClick", function()
         if HR.raidState.isTestMode then
-            HR:ClearRaidTrackerData(true)
-            HR:Print("Solo Test Mode data cleared.")
+            HR:ClearRaidTrackerData(true, true)
+            HR:LoadRaidLootState()
+            HR:UpdateClassCache()
+            HR:RefreshAllUI()
+            HR:Print("Solo Test Mode cleared.")
         else
             HR:StopCountdown(true)
             wipe(HR.raidState.sessions)
             HR.raidState.viewIndex = 0
             HR.raidState.trackingActive = false
+            HR:SaveRaidLootState()
             HR:RefreshAllUI()
         end
     end)
@@ -4500,9 +5283,11 @@ function HR:RefreshRaidTrackerUI()
     if activeView == "BIDS" then
         f.bidsViewBtn:LockHighlight()
         f.rollsViewBtn:UnlockHighlight()
+        if f.postViewBtn then f.postViewBtn:SetText("Post Bids") end
     else
         f.bidsViewBtn:UnlockHighlight()
         f.rollsViewBtn:LockHighlight()
+        if f.postViewBtn then f.postViewBtn:SetText("Post Rolls") end
     end
 
     if self.raidState.countdownActive then
@@ -4621,6 +5406,7 @@ function HR:RefreshRaidTrackerUI()
                 local cur = HR.raidState.marks[entry.name] or 1
                 HR.raidState.marks[entry.name] = (cur % #PLAYER_MARKS) + 1
             end
+            HR:SaveRaidLootState()
             HR:RefreshRaidTrackerUI()
         end)
 
@@ -4648,6 +5434,7 @@ end
 local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:RegisterEvent("PLAYER_LOGIN")
+eventFrame:RegisterEvent("PLAYER_LOGOUT")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 eventFrame:RegisterEvent("PARTY_MEMBERS_CHANGED")
@@ -4669,6 +5456,7 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         local loaded = ...
         if loaded == addonName then
             HR:InitDB()
+            HR:LoadRaidLootState()
             HR:CreateMinimapButton()
             HR:CreateSwitcherFrame()
             HR:CreateConfigFrame()
@@ -4685,6 +5473,8 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         HR:UpdateClassCache()
         HR:CheckGroupTransition()
         HR:PrintLoadBannerAndHelp(true)
+    elseif event == "PLAYER_LOGOUT" then
+        HR:SaveRaidLootState()
     elseif event == "PLAYER_ENTERING_WORLD" then
         HR:UpdateKnownProfessions()
         HR:UpdateClassCache()
@@ -4766,6 +5556,9 @@ SlashCmdList["HIGHROLLER"] = function(msg)
         HR:RunSoloTest()
     elseif cmd == "profile" and rest and rest ~= "" then
         HR:SetActiveProfile(rest)
+    elseif cmd == "clear" then
+        HR:ClearRaidTrackerData(true)
+        HR:Print("Cleared saved raid loot table.")
     elseif cmd == "reset" then
         HR:ResetAllWindowPositions()
     elseif cmd == "pause" or cmd == "off" then
