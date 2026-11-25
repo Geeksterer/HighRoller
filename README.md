@@ -28,15 +28,16 @@
   - **Rolls:** Locks each player to their first `/roll` per item, automatically categorizing Main Spec (`1-100`), Off Spec (`1-99`), and flagging invalid ranges.
 - **Live Win Counter:** Displays a compact `[1]`, `[2]`, etc. badge next to each player's class-colored name showing how many qualifying items they have won in the current run.
 - **Share to Raid Chat (`Post Bids` / `Post Rolls`):** One-click button on the tracker sends the current ranked bids or rolls list directly to Raid chat (without announcing winners), branded with High Roller by Copper and the addon URL.
-- **Quick Controls:** Left-click a player row to cycle marks (`(W)`, `(MS)`, `(OS)`, `[!]`); Right-click to ignore/unignore an entry. Includes `Countdown` (10-second timer with 5-second warning and local finish notice), `Tie-Break`, Master Loot `Award #1` and `To DE`, `Boss Loot` queue, and item history (`<` / `>`).
+- **Quick Controls:** Left-click a player row to cycle marks (`(W)`, `(MS)`, `(OS)`, `[!]`); Right-click to ignore/unignore an entry. Includes `Countdown` (10-second timer with 5-second warning and local finish notice), `Tie-Break`, `Clear` (flushes all tracker and loot table data), Master Loot `Award #1` and `To DE`, `Boss Loot` queue, and item history (`<` / `>`).
 
 ### Persistent Loot Summary & Export Reports
 - **Focused Boss Drop Tracking:** Tracks **Epic/Legendary BoP items, Tier Tokens, and Boss Mounts & Companion Pets** (filtering out Emblems/Badges, BoE trash, Trade Goods, and Recipes).
 - **Accurate Winner & Queue Handling:**
   - Records winners **only** when won via **Group Loot** or a **`/rw` bid/roll session**.
+  - **Assistant / Holder Group Loot Reclaim:** If a Raid Assistant or loot holder picks up an item on Group Loot and later puts it up for bid or roll in `/rw`, High Roller automatically strips their name from the loot table, reports, and win counter so only the real `/rw` winner (or `Unclaimed`) is recorded.
   - **Master Looter & Bulk Loot Queuing:** When a Master Looter loots boss drops to themselves or hands out loot in bulk to a loot holder to roll later, those items are logged as **Queued** (never falsely listing the holder as a winner) and automatically transition into the active session once linked in `/rw`.
   - **Complete Drop Log:** Preserves **Unclaimed** and **Queued** items alongside won items in **All Drops** and all export reports so you never lose track of a boss drop.
-- **Saves Across Logout & Group Prompt:** Your last raid's loot table persists after you leave a raid or log out and is still there when you log back in. When you join a new group, High Roller prompts you with **Accept** or **Cancel** to decide whether to clear the saved loot table (or run `/hr clear` manually anytime).
+- **Saves Across Logout & Group Prompt:** Your last raid's loot table persists after you leave a raid or log out and is still there when you log back in. When you join a new group **and** saved loot data exists, High Roller prompts you with **Accept** or **Cancel** to decide whether to clear it. Clicking **Clear** in the Raid Tracker (or running `/hr clear`) flushes all tracker and loot table data immediately.
 - **Post Chat & Copy-Ready Reports (No WoW Link Clutter):** Post a text-only summary to Raid/Party chat or export your run's complete loot table in four formats—each branded with the addon link:
   - **Plain Text**
   - **Discord** (Markdown formatted)
@@ -44,13 +45,20 @@
   - **Excel / TSV** (Tab-separated columns: `Item`, `Winner`, `Class`, `Winning Bid/Roll`, `Bids`, `Rolls`)
 
 ### Built-In Solo Test Mode
-- Run `/hr test` (or click **Test Mode** in Config) to populate the Tracker, Boss Loot Queue, Win Counters, Loot Summary, and all four Report formats with sample WotLK raid data—including Epic BoP gear, a Tier Token, a Boss Mount, Queued ML loot, and an Unclaimed drop—without overwriting your real saved raid loot table. Click **Clear** in the Tracker to exit Test Mode and restore your saved data.
+- Run `/hr test` (or click **Test Mode** in Config) to populate the Tracker, Boss Loot Queue, Win Counters, Loot Summary, and all four Report formats with sample WotLK raid data—including Epic BoP gear, a Tier Token, a Boss Mount, Queued ML loot, an Assistant Group Loot pickup reclaimed by `/rw`, and an Unclaimed drop. Click **Clear** in the Tracker to flush all data when finished.
 
 ---
 
 ## Changelog
 
-### v1.0.3 (Current)
+### v1.0.4 (Current)
+- **Group Loot Assistant / Holder Reclaim on `/rw`:** Fixed a bug where items taken on Group Loot by Raid Assistants (or other loot holders) to be rolled later remained credited to them as winners. When that item is later linked in `/rw` for bidding or rolling, High Roller now reclaims the matching Group Loot entry (prioritizing the `/rw` sender and Raid Leaders/Assists in FIFO order), strips their name from **Winners**, reports, and `[N]` win counters, and hands the item to the new `/rw` session.
+- **Improved Loot Deduplication:** Extended Group Loot and Master Loot award deduplication windows (`30s` / `15s`) so delayed `LOOT_ITEM` chat lines cannot create duplicate queued entries behind a Group Loot drop.
+- **Full Flush on `Clear`:** Fixed a bug where clicking **Clear** in the Raid Tracker only cleared active roll/bid sessions while leaving the saved loot table intact. Clicking **Clear** (or running `/hr clear`) now flushes all sessions, dropped items, boss loot queue entries, marks, and saved loot data, closes the Loot Report window if open, and resets the report buttons.
+- **Smarter Join-Group Clear Prompt:** Fixed login and `/reload` roster timing by deferring initial group-state detection to `PLAYER_ENTERING_WORLD`, preventing false prompts mid-raid and ensuring the **Accept / Cancel** clear dialog only appears when joining a group with saved loot data present.
+- **Solo Test Mode Update:** Updated `/hr test` to include a simulated Raid Assistant Group Loot pickup reclaimed by `/rw`.
+
+### v1.0.3
 - **Fresh View on Every `/rw` Item Link:** Linking the same item again in Raid Warning (duplicate drops or re-rolls) now always opens a brand-new tracker view and archives the previous one in history, instead of reusing the prior view. High Roller's own countdown warnings are also guarded so they never trigger blank views.
 - **Raider-First `Post Bids` / `Post Rolls` Button:** Replaced the old winner `Announce` button on the Raid Tracker with a dynamic `Post Bids` / `Post Rolls` button that sends the ranked list to Raid chat with High Roller branding and website URL. Countdown completion now prints a local notice instead of announcing winners in chat.
 - **MS Over OS Enabled by Default:** `MS Bids Sort Above [OS] Bids` is now checked by default in Config (with a one-time upgrade for existing installs) and can still be unchecked at any time if you want MS and OS bids to compete purely by amount.
