@@ -1802,9 +1802,12 @@ function HR:ClearRaidTrackerData(silent, skipSave)
     if not skipSave then
         self:SaveRaidLootState()
     end
+    if self.lootReportFrame and self.lootReportFrame:IsShown() then
+        self.lootReportFrame:Hide()
+    end
     self:RefreshAllUI()
     if not silent and hadData then
-        self:Print("Cleared previous Raid Tracker and loot table data.")
+        self:Print("Cleared all Raid Tracker and loot table data.")
     end
 end
 
@@ -1943,9 +1946,11 @@ function HR:RecordItemWinner(itemLink, winnerName, detailText, sessionRef, winSo
     self:RefreshAllUI()
 end
 
-function HR:StartNewLootSession(itemLink)
+function HR:StartNewLootSession(itemLink, rwSender)
     self:UpdateClassCache()
     local newID = ExtractItemID(itemLink)
+    local newPlainName = strlower(ExtractPlainItemName(itemLink))
+    local shortSender = (rwSender and rwSender ~= "") and strlower(ShortName(rwSender)) or nil
 
     -- Always cancel active countdown, archive any previous session, and open a fresh view (even for the same item)
     self:StopCountdown(true)
@@ -1984,27 +1989,50 @@ function HR:StartNewLootSession(itemLink)
         end
     end
 
-    -- Link to an existing queued/non-session entry for this itemID (e.g. ML self-loot or bulk-queued item,
-    -- or an item looted earlier before being put up for bid/roll), clearing any holder/prior name.
+    -- Helper: matches unlinked droppedItems entry by Item ID (or plain item name fallback)
+    local function MatchesItem(d)
+        if d.session then return false end
+        if newID and d.itemID then
+            return d.itemID == newID
+        end
+        return (newPlainName ~= "") and (strlower(d.itemName or ExtractPlainItemName(d.itemLink)) == newPlainName)
+    end
+
+    -- Reclaim an existing unlinked drop in FIFO order so Group Loot items grabbed by a Raid Leader /
+    -- Assistant (or queued ML/bulk items) are no longer credited to the person who picked them up.
     local qualifies = self:IsEpicBoPOrTierToken(itemLink)
     local repurposedDrop = nil
-    if newID then
-        -- First prefer an explicitly queued item (FIFO: oldest queued copy first)
-        for i = 1, #self.raidState.droppedItems do
-            local d = self.raidState.droppedItems[i]
-            if d.itemID == newID and not d.session and d.queued then
+
+    -- Pass 1: Unlinked Group Loot entry taken by the /rw sender or any Raid Leader / Assistant
+    for i = 1, #self.raidState.droppedItems do
+        local d = self.raidState.droppedItems[i]
+        if MatchesItem(d) and (not d.queued) and d.winner and d.winner ~= "" then
+            local lowerWin = strlower(ShortName(d.winner))
+            if (shortSender and lowerWin == shortSender) or self:IsSenderRLOrAssist(d.winner) then
                 repurposedDrop = d
                 break
             end
         end
-        -- Otherwise check if an item looted outside /rw is now being rolled/bid
-        if not repurposedDrop then
-            for i = #self.raidState.droppedItems, 1, -1 do
-                local d = self.raidState.droppedItems[i]
-                if d.itemID == newID and not d.session then
-                    repurposedDrop = d
-                    break
-                end
+    end
+
+    -- Pass 2: Unlinked explicitly queued ML / bulk item (FIFO: oldest queued copy first)
+    if not repurposedDrop then
+        for i = 1, #self.raidState.droppedItems do
+            local d = self.raidState.droppedItems[i]
+            if MatchesItem(d) and d.queued then
+                repurposedDrop = d
+                break
+            end
+        end
+    end
+
+    -- Pass 3: Any other unlinked Group Loot entry for this item (FIFO: non-assist loot holder)
+    if not repurposedDrop then
+        for i = 1, #self.raidState.droppedItems do
+            local d = self.raidState.droppedItems[i]
+            if MatchesItem(d) then
+                repurposedDrop = d
+                break
             end
         end
     end
@@ -2040,7 +2068,7 @@ function HR:OnRaidWarning(msg, sender)
 
     local itemLink = ExtractItemLink(msg)
     if itemLink then
-        self:StartNewLootSession(itemLink)
+        self:StartNewLootSession(itemLink, sender)
     elseif self.raidState.trackingActive then
         self:ProcessPotentialBid(msg, sender)
     end
@@ -2248,12 +2276,12 @@ function HR:OnLootChatMessage(msg)
     if itemID then
         local dedupeKey = shortRec .. ":" .. tostring(itemID)
         local glTime = self.raidState.recentGroupLootWins[dedupeKey]
-        if glTime and (now - glTime) <= 10 then
+        if glTime and (now - glTime) <= 30 then
             self.raidState.recentGroupLootWins[dedupeKey] = nil
             return
         end
         local awTime = self.raidState.recentAwardedLoot[dedupeKey]
-        if awTime and (now - awTime) <= 10 then
+        if awTime and (now - awTime) <= 15 then
             self.raidState.recentAwardedLoot[dedupeKey] = nil
             return
         end
@@ -2801,11 +2829,11 @@ function HR:RunSoloTest()
     -- Queued ML loot waiting to be rolled later (shows as Queued in All Drops & Reports, holder name NOT in Winner column)
     self:QueueLootItem(linkRingQueued, "Uther", "Queued (ML)")
 
-    -- Simulate ML (Uther) queuing DBW before putting it up for /rw bid/roll (transitions cleanly from Queued -> active session)
-    self:QueueLootItem(linkDBW, "Uther", "Queued (ML)")
+    -- Simulate Raid Assistant (Uther) taking DBW on Group Loot before putting it up in /rw (Uther's Group Loot win is stripped)
+    self:RecordItemWinner(linkDBW, "Uther", "Group Loot (Need 100)", nil, "GROUP_LOOT")
 
-    -- Session 4 (Active): Deathbringer's Will (tests MS/OS bids, MS>OS sort toggle, MS/OS/invalid rolls, & [1]/[2] win badges)
-    self:StartNewLootSession(linkDBW)
+    -- Session 4 (Active): Deathbringer's Will (reclaims Uther's Group Loot placeholder, tests MS/OS bids/rolls & [1]/[2] win badges)
+    self:StartNewLootSession(linkDBW, "Uther")
     self:ProcessPotentialBid("3000", "Garrosh")
     self:ProcessPotentialBid("3500", "Valeera")
     self:ProcessPotentialBid("os",   "Valeera")
@@ -5208,20 +5236,8 @@ function HR:CreateRaidTrackerFrame()
     clearBtn:SetPoint("LEFT", tieBtn, "RIGHT", 2, 0)
     clearBtn:SetText("Clear")
     clearBtn:SetScript("OnClick", function()
-        if HR.raidState.isTestMode then
-            HR:ClearRaidTrackerData(true, true)
-            HR:LoadRaidLootState()
-            HR:UpdateClassCache()
-            HR:RefreshAllUI()
-            HR:Print("Solo Test Mode cleared.")
-        else
-            HR:StopCountdown(true)
-            wipe(HR.raidState.sessions)
-            HR.raidState.viewIndex = 0
-            HR.raidState.trackingActive = false
-            HR:SaveRaidLootState()
-            HR:RefreshAllUI()
-        end
+        HR:ClearRaidTrackerData(true)
+        HR:Print("Cleared all Raid Tracker and loot table data.")
     end)
 
     -- Compact Control Row 2: Award #1 | To DE | Boss Loot | Loot
@@ -5471,7 +5487,6 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
     elseif event == "PLAYER_LOGIN" then
         HR:UpdateKnownProfessions()
         HR:UpdateClassCache()
-        HR:CheckGroupTransition()
         HR:PrintLoadBannerAndHelp(true)
     elseif event == "PLAYER_LOGOUT" then
         HR:SaveRaidLootState()
@@ -5483,7 +5498,9 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
     elseif event == "ZONE_CHANGED_NEW_AREA" then
         HR:CheckInstanceAutoProfile()
     elseif event == "PARTY_MEMBERS_CHANGED" or event == "RAID_ROSTER_UPDATE" then
-        HR:CheckGroupTransition()
+        if HR.groupStateInitialized then
+            HR:CheckGroupTransition()
+        end
         HR:UpdateClassCache()
     elseif event == "SKILL_LINES_CHANGED" then
         HR:UpdateKnownProfessions()
