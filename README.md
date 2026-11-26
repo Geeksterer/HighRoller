@@ -51,7 +51,10 @@
 
 ## Changelog
 
-### v1.0.4 (Current)
+### v1.0.5 (Current)
+- **Hover details:** This version adds details on the profile you hover over to help identify what the policies are easier.
+
+### v1.0.4
 - **Group Loot Assistant / Holder Reclaim on `/rw`:** Fixed a bug where items taken on Group Loot by Raid Assistants (or other loot holders) to be rolled later remained credited to them as winners. When that item is later linked in `/rw` for bidding or rolling, High Roller now reclaims the matching Group Loot entry (prioritizing the `/rw` sender and Raid Leaders/Assists in FIFO order), strips their name from **Winners**, reports, and `[N]` win counters, and hands the item to the new `/rw` session.
 - **Improved Loot Deduplication:** Extended Group Loot and Master Loot award deduplication windows (`30s` / `15s`) so delayed `LOOT_ITEM` chat lines cannot create duplicate queued entries behind a Group Loot drop.
 - **Full Flush on `Clear`:** Fixed a bug where clicking **Clear** in the Raid Tracker only cleared active roll/bid sessions while leaving the saved loot table intact. Clicking **Clear** (or running `/hr clear`) now flushes all sessions, dropped items, boss loot queue entries, marks, and saved loot data, closes the Loot Report window if open, and resets the report buttons.
