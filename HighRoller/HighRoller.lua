@@ -3552,6 +3552,88 @@ end
 -- 9. Profile Switcher Panel (Left-Click Minimap Button)
 -- ============================================================================
 
+local PROFILE_TOOLTIP_ACTION_COLORS = {
+    NEED       = { 0.20, 1.00, 0.40 },
+    DISENCHANT = { 0.80, 0.45, 1.00 },
+    GREED      = { 1.00, 0.82, 0.00 },
+    PASS       = { 1.00, 0.35, 0.35 },
+    MANUAL     = { 0.65, 0.65, 0.65 },
+}
+
+local PROFILE_TOOLTIP_POPUP_LABELS = {
+    OK           = { text = "Auto Click OK",       color = { 0.20, 1.00, 0.40 } },
+    CANCEL       = { text = "Auto Click Cancel",   color = { 1.00, 0.35, 0.35 } },
+    CANCEL_GREED = { text = "Cancel & Roll Greed", color = { 1.00, 0.82, 0.00 } },
+    CANCEL_PASS  = { text = "Cancel & Pass",       color = { 1.00, 0.35, 0.35 } },
+    MANUAL       = { text = "Do not Automate",     color = { 0.65, 0.65, 0.65 } },
+}
+
+local PROFILE_TOOLTIP_ROLL_ROWS = {
+    { key = "greenLoot",               label = "Uncommon (Green) Loot" },
+    { key = "blueGeneral",             label = "Rare (Blue) BoE / General" },
+    { key = "epicBoE",                 label = "Epic BoE Items" },
+    { key = "blueBoPGear",             label = "Blue BoP Gear" },
+    { key = "epicBoPGear",             label = "Epic BoP Items" },
+    { key = "orbs",                    label = "Orbs & High-Value Mats" },
+    { key = "recipeBoE",               label = "BoE Recipes" },
+    { key = "recipeBoPKnownUnlearned", label = "BoP Recipes (Unlearned)" },
+    { key = "recipeBoPOther",          label = "BoP Recipes (Known / Unusable)" },
+    { key = "mountUnlearned",          label = "Mounts (Don't Know)" },
+    { key = "mountKnown",              label = "Mounts (Already Know)" },
+    { key = "petUnlearned",            label = "Pets (Don't Know)" },
+    { key = "petKnown",                label = "Pets (Already Know)" },
+}
+
+function HR:ShowProfileTooltip(owner, profileName)
+    if not owner or not profileName or not HighRollerDB or not HighRollerDB.profiles then return end
+    local prof = HighRollerDB.profiles[profileName]
+    if not prof then return end
+
+    local anchor = "ANCHOR_RIGHT"
+    local cx = owner:GetCenter()
+    local screenW = UIParent and UIParent:GetWidth() or 1024
+    if cx and cx > (screenW * 0.62) then
+        anchor = "ANCHOR_LEFT"
+    end
+
+    GameTooltip:SetOwner(owner, anchor)
+    local isActive = (profileName == self:GetActiveProfileName())
+    local titleSuffix = isActive and " |cff00ff00(Active)|r" or ""
+    GameTooltip:AddLine(profileName .. titleSuffix, 1, 0.85, 0.2)
+    GameTooltip:AddLine("Loot Roll Policies:", 0.75, 0.85, 1)
+
+    for _, item in ipairs(PROFILE_TOOLTIP_ROLL_ROWS) do
+        local val = prof[item.key] or "MANUAL"
+        local label = ACTION_LABELS[val] or tostring(val)
+        local c = PROFILE_TOOLTIP_ACTION_COLORS[val] or PROFILE_TOOLTIP_ACTION_COLORS.MANUAL
+        GameTooltip:AddDoubleLine(item.label, label, 0.92, 0.92, 0.92, c[1], c[2], c[3])
+    end
+
+    GameTooltip:AddLine(" ")
+    GameTooltip:AddLine("Fallbacks & Popups:", 0.75, 0.85, 1)
+
+    local fbVal = prof.noEnchanterFallback or "MANUAL"
+    local fbColor = PROFILE_TOOLTIP_ACTION_COLORS[fbVal] or PROFILE_TOOLTIP_ACTION_COLORS.MANUAL
+    GameTooltip:AddDoubleLine("No-Enchanter Fallback", ACTION_LABELS[fbVal] or tostring(fbVal),
+        0.92, 0.92, 0.92, fbColor[1], fbColor[2], fbColor[3])
+
+    local deInfo = PROFILE_TOOLTIP_POPUP_LABELS[prof.bopDEConfirm] or PROFILE_TOOLTIP_POPUP_LABELS.MANUAL
+    GameTooltip:AddDoubleLine("BoP Disenchant Popup", deInfo.text,
+        0.92, 0.92, 0.92, deInfo.color[1], deInfo.color[2], deInfo.color[3])
+
+    local lootInfo = PROFILE_TOOLTIP_POPUP_LABELS[prof.bopLootConfirm] or PROFILE_TOOLTIP_POPUP_LABELS.MANUAL
+    GameTooltip:AddDoubleLine("BoP Need / Greed Popup", lootInfo.text,
+        0.92, 0.92, 0.92, lootInfo.color[1], lootInfo.color[2], lootInfo.color[3])
+
+    if prof.passJCRecipes then
+        GameTooltip:AddDoubleLine("Pass BoP JC Recipes", "Yes (Always Pass)", 0.92, 0.92, 0.92, 1.0, 0.35, 0.35)
+    else
+        GameTooltip:AddDoubleLine("Pass BoP JC Recipes", "No", 0.92, 0.92, 0.92, 0.65, 0.65, 0.65)
+    end
+
+    GameTooltip:Show()
+end
+
 function HR:CreateSwitcherFrame()
     local f = CreateManagedWindow("HighRollerSwitcherFrame", "switcher", 285, 345, "High Roller", true, false)
     self.switcherFrame = f
@@ -3603,6 +3685,9 @@ function HR:CreateSwitcherFrame()
     f:SetScript("OnShow", function()
         HR:RefreshSwitcherUI()
         HR:UpdateBackButtonState(f)
+    end)
+    f:SetScript("OnHide", function()
+        GameTooltip:Hide()
     end)
 end
 
@@ -3656,9 +3741,22 @@ function HR:RefreshSwitcherUI()
 
         local function OnPick()
             HR:SetActiveProfile(name)
+            if MouseIsOver and MouseIsOver(row) then
+                HR:ShowProfileTooltip(row, name)
+            end
+        end
+        local function OnHover()
+            HR:ShowProfileTooltip(row, name)
+        end
+        local function OnLeave()
+            GameTooltip:Hide()
         end
         row:SetScript("OnClick", OnPick)
         row.radio:SetScript("OnClick", OnPick)
+        row:SetScript("OnEnter", OnHover)
+        row:SetScript("OnLeave", OnLeave)
+        row.radio:SetScript("OnEnter", OnHover)
+        row.radio:SetScript("OnLeave", OnLeave)
 
         row:Show()
     end
@@ -3952,6 +4050,9 @@ function HR:CreateEditProfilesFrame()
         HR:RefreshEditProfilesUI()
         HR:UpdateBackButtonState(f)
     end)
+    f:SetScript("OnHide", function()
+        GameTooltip:Hide()
+    end)
 end
 
 function HR:RefreshEditProfilesUI()
@@ -3971,6 +4072,12 @@ function HR:RefreshEditProfilesUI()
         if not row then
             row = CreateFrame("Frame", nil, f.scrollContent)
             row:SetSize(320, rowHeight)
+            row:EnableMouse(true)
+
+            row.hl = row:CreateTexture(nil, "BACKGROUND")
+            row.hl:SetAllPoints()
+            row.hl:SetTexture(1, 1, 1, 0.08)
+            row.hl:Hide()
 
             row.delBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
             row.delBtn:SetSize(52, 20)
@@ -4018,6 +4125,23 @@ function HR:RefreshEditProfilesUI()
                 popup.data = name
             end
         end)
+
+        local function OnRowEnter()
+            if row.hl then row.hl:Show() end
+            HR:ShowProfileTooltip(row, name)
+        end
+        local function OnRowLeave()
+            if row.hl then row.hl:Hide() end
+            GameTooltip:Hide()
+        end
+        row:SetScript("OnEnter", OnRowEnter)
+        row:SetScript("OnLeave", OnRowLeave)
+        row.copyBtn:SetScript("OnEnter", OnRowEnter)
+        row.copyBtn:SetScript("OnLeave", OnRowLeave)
+        row.editBtn:SetScript("OnEnter", OnRowEnter)
+        row.editBtn:SetScript("OnLeave", OnRowLeave)
+        row.delBtn:SetScript("OnEnter", OnRowEnter)
+        row.delBtn:SetScript("OnLeave", OnRowLeave)
 
         row:Show()
     end
