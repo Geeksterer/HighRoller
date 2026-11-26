@@ -2,7 +2,7 @@
 ## Title: High Roller
 ## Notes: Profile-based automatic group loot roller and Raid Warning roll/bid tracker.
 ## Author: Copper
-## Version: 1.0.4
+## Version: 1.0.5
 ## SavedVariables: HighRollerDB
 
 HighRoller.lua
