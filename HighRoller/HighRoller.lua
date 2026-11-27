@@ -1100,17 +1100,27 @@ HR.pendingRolls   = {}
 local rollDelayFrame = CreateFrame("Frame")
 rollDelayFrame:Hide()
 rollDelayFrame:SetScript("OnUpdate", function(self, elapsed)
-    local hasPending = false
-    for rollID, job in pairs(HR.pendingRolls) do
+    local readyJobs = nil
+    for _, job in pairs(HR.pendingRolls) do
         job.remaining = job.remaining - elapsed
         if job.remaining <= 0 then
-            HR.pendingRolls[rollID] = nil
-            HR:ExecuteRollJob(job)
-        else
-            hasPending = true
+            if not readyJobs then
+                readyJobs = {}
+            end
+            readyJobs[#readyJobs + 1] = job
         end
     end
-    if not hasPending then
+
+    if readyJobs then
+        for _, job in ipairs(readyJobs) do
+            if HR.pendingRolls[job.rollID] == job then
+                HR.pendingRolls[job.rollID] = nil
+                HR:ExecuteRollJob(job)
+            end
+        end
+    end
+
+    if next(HR.pendingRolls) == nil then
         self:Hide()
     end
 end)
@@ -1220,6 +1230,11 @@ function HR:OnStartLootRoll(rollID)
     if isCustomOverride then
         primaryAction = customOverrideAction
         reasonTag = "custom item override"
+
+    -- Quest Items (e.g., Sealed Chest): default to Do not Automate unless overridden above
+    elseif itemType == CLASS_QUEST then
+        primaryAction = "MANUAL"
+        reasonTag = "quest item"
 
     -- Priority 1: Mounts (Don't Know vs. Already Know)
     elseif isMount then
