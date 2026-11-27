@@ -18,6 +18,7 @@
   - **Fallbacks & Popups:** Configurable No-Enchanter fallback and optional auto-confirm/cancel handling for BoP Disenchant and BoP Need/Greed popups
 - **Copy & Customize Profiles:** Duplicate any built-in or custom profile with one click (`Copy`) to tweak a few rules without starting from scratch. Active profiles save per character.
 - **Custom Item Overrides (Priority 0):** Force a specific action (`Need`, `Greed`, `Disenchant`, `Pass`, or `Do not Automate`) on any Item ID or Shift-clicked item link, overriding all profile rules.
+- **Quest Item Protection:** Quest items (e.g., Sealed Chest) automatically default to `Do not Automate` so profile quality rules never auto-roll them, unless you explicitly configure a Custom Item Override for that Item ID.
 - **Instance Auto-Switching:** Optionally assign a profile for **5-Man Dungeons** and a profile for **Raids** so High Roller switches automatically when you zone in (while still letting you switch manually mid-run).
 - **Optional Roll Delay:** Choose `Instant (0s)`, `0.5s`, `1.0s`, or `1.5s` in Config for natural roll timing.
 
@@ -51,7 +52,11 @@
 
 ## Changelog
 
-### v1.0.5 (Current)
+### v1.0.6 (Current)
+- **Fixed Delayed Roll Crash (`invalid key to 'next'`):** Refactored the Roll Delay `OnUpdate` handler into a safe two-phase pass (decrementing timers and collecting ready rolls first, then clearing and executing them in a second pass, and hiding the timer frame only when no pending rolls remain). This eliminates crashes when Roll Delay is set above `0s` and multiple boss drops trigger simultaneous group loot rolls (e.g., Lich King), while ensuring newly queued delayed rolls are never dropped.
+- **Quest Items Default to `Do not Automate`:** Quest drops (e.g., Sealed Chest) are now automatically treated as `Do not Automate` right after **Priority 0: Custom Item Overrides**, preventing profile quality rules from auto-rolling them unless you explicitly configure a Custom Item Override for that Item ID.
+
+### v1.0.5
 - **Hover details:** This version adds details on the profile you hover over to help identify what the policies are easier.
 
 ### v1.0.4
@@ -155,6 +160,8 @@ You can use `/hr` or `/highroller`:
 | **Pets (Don't Know)** | Need | Need | Need | Pass | Do not Automate |
 | **Pets (Already Know)** | Pass | Pass | Need | Pass | Do not Automate |
 | **No-Enchanter Fallback** | Greed | Greed | Need | Pass | Do not Automate |
+
+> **Note:** Quest items (e.g., Sealed Chest) automatically default to **Do not Automate** across all profiles unless overridden in **Custom Item Overrides (Priority 0)**.
 
 ---
 
